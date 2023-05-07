@@ -1,1 +1,42 @@
-Weights
+Sub SolverRecord()
+'
+' SolverRecord Macro
+'
+
+'
+    Sheets("LSTM Buy and Sell ").Select
+    SolverReset
+    SolverOk SetCell:="$AY$15", MaxMinVal:=1, ValueOf:=0, ByChange:="$X$15:$AQ$15", _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverAdd CellRef:="$X$15:$AQ$15", Relation:=1, FormulaText:="0.2"
+    SolverAdd CellRef:="$X$15:$AQ$15", Relation:=3, FormulaText:="-0.1"
+    SolverAdd CellRef:="$AS$15", Relation:=2, FormulaText:="0.99999999"
+    SolverOk SetCell:="$AY$15", MaxMinVal:=1, ValueOf:=0, ByChange:="$X$15:$AQ$15", _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverOk SetCell:="$AY$15", MaxMinVal:=1, ValueOf:=0, ByChange:="$X$15:$AQ$15", _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverSolve userfinish:=True
+    solverfinish keepfinal:=1
+End Sub
+--------------------------------------
+Sub SolverRecord()
+'
+' SolverRecord Macro
+'
+
+'
+    Sheets("MV Buy and Sell").Select
+    SolverReset
+    SolverOk SetCell:="$CV$6", MaxMinVal:=1, ValueOf:=0, ByChange:="$BU$6:$CN$6", _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverAdd CellRef:="$BU$6:$CN$6", Relation:=1, FormulaText:="0.2"
+    SolverAdd CellRef:="BU$6:$CN$6", Relation:=3, FormulaText:="-0.1"
+    SolverAdd CellRef:="$CP$6", Relation:=2, FormulaText:="0.99999999"
+    SolverOk SetCell:="$CV$6", MaxMinVal:=1, ValueOf:=0, ByChange:="$BU$6:$CN$6", _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverOk SetCell:="$CV$6", MaxMinVal:=1, ValueOf:=0, ByChange:="$BU$6:$CN$6", _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverSolve userfinish:=True
+    solverfinish keepfinal:=1
+End Sub
+
