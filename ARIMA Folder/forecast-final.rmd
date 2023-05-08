@@ -1,0 +1,1253 @@
+---
+title: "Forecast og Evaluering"
+author: "Cecilie Brinkholm, Cecilie Fabrin og Jakob Kristiansen"
+date: "01/06/2023"
+output: html_document
+---
+
+
+```{r, include = FALSE}
+library(tidyverse)
+library(magrittr)
+library(vroom)
+library(tidymodels)
+library(keras)
+library(tensorflow)
+library(dplyr)
+library(tidytext)
+library(tidymodels)
+library(dplyr)
+library(naniar)
+library(h2o) 
+library(caTools)
+library(caret)
+library(pROC)
+library(tidyquant)
+library(timetk)
+library(ggplot2)
+library(patchwork)
+library(fable)
+library(forecast)
+library(tibble)
+library(readr)
+library(tidyquant)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(e1071)
+library(data.table)
+library(RColorBrewer)
+library(tseries)
+library(urca)
+library(readxl)
+library(tframePlus)
+library(xts)
+library(PerformanceAnalytics)
+library(lubridate)
+library(corrplot)
+library(multDM)
+library(car)
+library(writexl)
+```
+
+
+
+
+
+# Data overblik
+
+Indlæser data.
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/JakobTheSlott/Kandidat/main/Assets.csv")
+SP500 <- read.csv("https://raw.githubusercontent.com/JakobTheSlott/Kandidat/main/SP%20500.csv")
+```
+
+Ændre navn af data kollonen i datasættet data.
+
+```{r}
+colnames(data)[1]  <- "Date"
+```
+
+Laver Date kollonnen om til data-typen date.
+
+```{r} 
+data$Date <- as.Date(data$Date, "%d/%m/%Y")
+```
+
+```{r} 
+SP500$Date <- as.Date(SP500$Date, "%d/%m/%Y")
+```
+
+
+Afkorter data i overensstemmelse med specialets valgte periode. 
+
+```{r}
+SP500 %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+```{r}
+data %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+
+```{r}
+data %<>% arrange(Date)
+SP500 %<>% arrange(Date)
+```
+
+
+Med henblik på at anvende ARIMA modeller, er det nødvendigt at der forekommer samme antal observationer årligt, da dette skaber grundlag for en ensartet frekvens når data omdannes til et ts objekt i R. Der fjernes derfor tilfældige observationer de år hvor der forekommer flere end 251 observationer.
+
+
+```{r}
+data <- data[-c(10, 350, 700 , 1000, 1900, 1600, 2000, 2100), ]
+SP500 <- SP500[-c(10, 350, 700 , 1000, 1900, 1600, 2000, 2100), ]
+```
+
+
+
+
+
+# Beregning af afkast
+
+```{r}
+A_AAPL <- data %>%
+ mutate(AData = ((data$AAPL - lag(data$AAPL,1))))
+```
+
+```{r}
+A_AAPL %<>%
+ select(Date, AData) %>%
+ drop_na()
+```
+
+```{r} 
+A_AAPL$Date <- as.Date(A_AAPL$Date, "%d/%m/%Y")
+```
+
+```{r}
+A_AAPL %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+
+
+# Data omdannes til ts objekter
+```{r}
+data_AAPL <- ts(data$AAPL, start=2013, frequency = 251)
+data_MSFT <- ts(data$MSFT, start=2013, frequency = 251)
+data_AMZN <- ts(data$AMZN, start=2013, frequency = 251)
+data_GOOGL <- ts(data$GOOGL, start=2013, frequency = 251)
+data_BRK.B <- ts(data$BRK.B, start=2013, frequency = 251)
+data_TSLA <- ts(data$TSLA, start=2013, frequency = 251)
+data_NVDA <- ts(data$NVDA, start=2013, frequency = 251)
+data_GOOG <- ts(data$GOOG, start=2013, frequency = 251)
+data_UNH <- ts(data$UNH, start=2013, frequency = 251)
+data_JPM <- ts(data$JPM, start=2013, frequency = 251)
+data_AVGO <- ts(data$AVGO, start=2013, frequency = 251)
+data_V <- ts(data$V, start=2013, frequency = 251)
+data_BAC <- ts(data$BAC, start=2013, frequency = 251)
+data_HD <- ts(data$HD, start=2013, frequency = 251)
+data_MA <- ts(data$MA, start=2013, frequency = 251)
+data_MRK <- ts(data$MRK, start=2013, frequency = 251)
+data_ABBV <- ts(data$ABBV, start=2013, frequency = 251)
+data_LLY <- ts(data$LLY, start=2013, frequency = 251)
+data_UPS <- ts(data$UPS, start=2013, frequency = 251)
+data_CAT <- ts(data$CAT, start=2013, frequency = 251)
+data_AAPL <- ts(data$AAPL, start=2013, frequency = 251)
+data_SP500 <- ts(SP500$S.P.500, start=2013, frequency = 251)
+```
+
+
+```{r}
+data_train_AAPL <- window(data_AAPL,end=c(2019,251))
+data_test_AAPL <- window(data_AAPL,start=c(2020,1))
+data_train_MSFT <- window(data_MSFT,end=c(2019,251))
+data_test_MSFT <- window(data_MSFT,start=c(2020,1))
+data_train_AMZN <- window(data_AMZN,end=c(2019,251))
+data_test_AMZN <- window(data_AMZN,start=c(2020,1))
+data_train_GOOGL <- window(data_GOOGL,end=c(2019,251))
+data_test_GOOGL <- window(data_GOOGL,start=c(2020,1))
+data_train_BRK.B <- window(data_BRK.B,end=c(2019,251))
+data_test_BRK.B <- window(data_BRK.B,start=c(2020,1))
+data_train_TSLA <- window(data_TSLA,end=c(2019,251))
+data_test_TSLA <- window(data_TSLA,start=c(2020,1))
+data_train_NVDA <- window(data_NVDA,end=c(2019,251))
+data_test_NVDA <- window(data_NVDA,start=c(2020,1))
+data_train_GOOG <- window(data_GOOG,end=c(2019,251))
+data_test_GOOG <- window(data_GOOG,start=c(2020,1))
+data_train_UNH <- window(data_UNH,end=c(2019,251))
+data_test_UNH <- window(data_UNH,start=c(2020,1))
+data_train_JPM <- window(data_JPM,end=c(2019,251))
+data_test_JPM <- window(data_JPM,start=c(2020,1))
+data_train_AVGO <- window(data_AVGO,end=c(2019,251))
+data_test_AVGO <- window(data_AVGO,start=c(2020,1))
+data_train_V <- window(data_V,end=c(2019,251))
+data_test_V <- window(data_V,start=c(2020,1))
+data_train_BAC<- window(data_BAC,end=c(2019,251))
+data_test_BAC <- window(data_BAC,start=c(2020,1))
+data_train_HD <- window(data_HD,end=c(2019,251))
+data_test_HD <- window(data_HD,start=c(2020,1))
+data_train_MA <- window(data_MA,end=c(2019,251))
+data_test_MA <- window(data_MA,start=c(2020,1))
+data_train_MRK <- window(data_MRK,end=c(2019,251))
+data_test_MRK <- window(data_MRK,start=c(2020,1))
+data_train_ABBV <- window(data_ABBV,end=c(2019,251))
+data_test_ABBV <- window(data_ABBV,start=c(2020,1))
+data_train_LLY <- window(data_LLY,end=c(2019,251))
+data_test_LLY <- window(data_LLY,start=c(2020,1))
+data_train_UPS <- window(data_UPS,end=c(2019,251))
+data_test_UPS <- window(data_UPS,start=c(2020,1))
+data_train_CAT <- window(data_CAT,end=c(2019,251))
+data_test_CAT <- window(data_CAT,start=c(2020,1))
+data_train_SP500 <- window(data_SP500,end=c(2019,251))
+data_test_SP500 <- window(data_SP500,start=c(2020,1))
+```
+
+
+
+# Forecast ARIMA
+
+```{r}
+data_train_AAPL<- window(data_AAPL,end=c(2019,251))
+data_test_AAPL<- window(data_AAPL,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_AAPL) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_AAPL, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(7,1,7), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_AAPL=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_MSFT<- window(data_MSFT,end=c(2019,251))
+data_test_MSFT<- window(data_MSFT,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_MSFT) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_MSFT, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(4,1,4), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_MSFT=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_AMZN<- window(data_AMZN,end=c(2019,251))
+data_test_AMZN<- window(data_AMZN,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_AMZN) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_AMZN, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(3,1,3), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_AMZN=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_GOOGL<- window(data_GOOGL,end=c(2019,251))
+data_test_GOOGL<- window(data_GOOGL,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_GOOGL) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_GOOGL, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(6,1,7), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_GOOGL=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_BRK.B<- window(data_BRK.B,end=c(2019,251))
+data_test_BRK.B<- window(data_BRK.B,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_BRK.B) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_BRK.B, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(9,1,5), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_BRK.B=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_TSLA<- window(data_TSLA,end=c(2019,251))
+data_test_TSLA<- window(data_TSLA,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_TSLA) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_TSLA, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(2,1,2), include.drift = FALSE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_TSLA=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_NVDA<- window(data_NVDA,end=c(2019,251))
+data_test_NVDA<- window(data_NVDA,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_NVDA) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_NVDA, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(5,1,7), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_NVDA=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_GOOG<- window(data_GOOG,end=c(2019,251))
+data_test_GOOG<- window(data_GOOG,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_GOOG) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_GOOG, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(6,1,7), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_GOOG=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_UNH<- window(data_UNH,end=c(2019,251))
+data_test_UNH<- window(data_UNH,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_UNH) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_UNH, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(6,1,3), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_UNH=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_JPM<- window(data_JPM,end=c(2019,251))
+data_test_JPM<- window(data_JPM,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_JPM) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_JPM, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(2,1,4), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_JPM=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_AVGO<- window(data_AVGO,end=c(2019,251))
+data_test_AVGO<- window(data_AVGO,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_AVGO) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_AVGO, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(3,1,7), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_AVGO=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_V<- window(data_V,end=c(2019,251))
+data_test_V<- window(data_V,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_V) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_V, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(3,1,1), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_V=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_BAC<- window(data_BAC,end=c(2019,251))
+data_test_BAC<- window(data_BAC,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_BAC) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_BAC, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(2,1,9), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_BAC=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_HD<- window(data_HD,end=c(2019,251))
+data_test_HD<- window(data_HD,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_HD) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_HD, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(4,1,3), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_HD=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_MA<- window(data_MA,end=c(2019,251))
+data_test_MA<- window(data_MA,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_MA) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_MA, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(1,1,1), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_MA=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+data_train_MRK<- window(data_MRK,end=c(2019,251))
+data_test_MRK<- window(data_MRK,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_MRK) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_MRK, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(6,1,4), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_MRK=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_ABBV<- window(data_ABBV,end=c(2019,251))
+data_test_ABBV<- window(data_ABBV,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_ABBV) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_ABBV, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(9,1,7), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_ABBV=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_LLY<- window(data_LLY,end=c(2019,251))
+data_test_LLY<- window(data_LLY,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_LLY) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_LLY, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(5,1,4), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_LLY=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_UPS<- window(data_UPS,end=c(2019,251))
+data_test_UPS<- window(data_UPS,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_UPS) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_UPS, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(8,1,7), include.drift = FALSE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_UPS=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_CAT<- window(data_CAT,end=c(2019,251))
+data_test_CAT<- window(data_CAT,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_CAT) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_CAT, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(9,1,8), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_CAT=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+data_train_SP500<- window(data_SP500,end=c(2019,251))
+data_test_SP500<- window(data_SP500,start=c(2020, 1))
+
+h <- 1
+n <- length(data_test_SP500) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_SP500, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = TRUE, lambda = "auto")
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_ARIMA_SP500=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+
+
+# Forecast Random Walk
+
+
+```{r}
+h <- 1
+n <- length(data_test_AAPL) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_AAPL, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_AAPL=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+h <- 1
+n <- length(data_test_MSFT) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_MSFT, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_MSFT=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_AMZN) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_AMZN, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_AMZN=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_GOOGL) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_GOOGL, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_GOOGL=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_BRK.B) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_BRK.B, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_BRK.B=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_TSLA) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_TSLA, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_TSLA=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_NVDA) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_NVDA, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_NVDA=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+h <- 1
+n <- length(data_test_GOOG) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_GOOG, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_GOOG=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+h <- 1
+n <- length(data_test_UNH) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_UNH, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_UNH=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_JPM) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_JPM, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_JPM=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_AVGO) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_AVGO, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_AVGO=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_V) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_V, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_V=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_BAC) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_BAC, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_BAC=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_HD) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_HD, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_HD=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+h <- 1
+n <- length(data_test_MA) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_MA, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_MA=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+
+```{r}
+h <- 1
+n <- length(data_test_MRK) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_MRK, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_MRK=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_ABBV) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_ABBV, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_ABBV=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_LLY) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_LLY, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_LLY=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_UPS) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_UPS, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_UPS=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_CAT) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_CAT, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_CAT=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+
+
+```{r}
+h <- 1
+n <- length(data_test_SP500) - h + 10
+fcast <- matrix(0, nrow=n, ncol=h)
+for(i in 1:n){
+ freq=251
+ x <- window(data_SP500, end=c(2019,251) + (i-1)/freq)
+ refit <- Arima(x, order=c(0,1,0), include.drift = FALSE)
+ fcast[i,] <- forecast(refit, h=h)$mean
+ }
+fcast_RandomWalk_SP500=ts(fcast, start=c(2020, 1), end = c(2022, 251), freq=251)
+```
+# Rigtig længde af data
+
+
+# Evaluering af forecast
+
+## Accuracy evaluering ARIMA
+
+```{r}
+data.frame(AAPL= c(accuracy(fcast_ARIMA_AAPL, data_test_AAPL)),
+           MSFT= c(accuracy(fcast_ARIMA_MSFT, data_test_MSFT)),
+           AMZN= c(accuracy(fcast_ARIMA_AMZN, data_test_AMZN)),
+           GOOGL= c(accuracy(fcast_ARIMA_GOOGL, data_test_GOOGL)),
+           BRK.B= c(accuracy(fcast_ARIMA_BRK.B, data_test_BRK.B)),
+           TSLA= c(accuracy(fcast_ARIMA_TSLA, data_test_TSLA)),
+           NVDA= c(accuracy(fcast_ARIMA_NVDA, data_test_NVDA)),
+           GOOG= c(accuracy(fcast_ARIMA_GOOG, data_test_GOOG)),
+           UNH= c(accuracy(fcast_ARIMA_UNH, data_test_UNH)),
+           JPM= c(accuracy(fcast_ARIMA_JPM, data_test_JPM)),
+           AVGO= c(accuracy(fcast_ARIMA_AVGO, data_test_AVGO)),
+           V= c(accuracy(fcast_ARIMA_V, data_test_V)),
+           BAC= c(accuracy(fcast_ARIMA_BAC, data_test_BAC)),
+           HD= c(accuracy(fcast_ARIMA_HD, data_test_HD)),
+           MA= c(accuracy(fcast_ARIMA_MA, data_test_MA)),
+           MRK= c(accuracy(fcast_ARIMA_MRK, data_test_MRK)),
+           ABBV= c(accuracy(fcast_ARIMA_ABBV, data_test_ABBV)),
+           LLY= c(accuracy(fcast_ARIMA_LLY, data_test_LLY)),
+           UPS= c(accuracy(fcast_ARIMA_UPS, data_test_UPS)),
+           CAT= c(accuracy(fcast_ARIMA_CAT, data_test_CAT)),
+           SP500= c(accuracy(fcast_ARIMA_SP500, data_test_SP500)),
+           row.names = c("ME", "RMSE", "MAE","MPE", "MAPE","ACF1", "Theil's U"))
+```
+
+
+
+## Accuracy evaluering Random Walk
+
+```{r}
+data.frame(AAPL= c(accuracy(fcast_RandomWalk_AAPL, data_test_AAPL)),
+           MSFT= c(accuracy(fcast_RandomWalk_MSFT, data_test_MSFT)),
+           AMZN= c(accuracy(fcast_RandomWalk_AMZN, data_test_AMZN)),
+           GOOGL= c(accuracy(fcast_RandomWalk_GOOGL, data_test_GOOGL)),
+           BRK.B= c(accuracy(fcast_RandomWalk_BRK.B, data_test_BRK.B)),
+           TSLA= c(accuracy(fcast_RandomWalk_TSLA, data_test_TSLA)),
+           NVDA= c(accuracy(fcast_RandomWalk_NVDA, data_test_NVDA)),
+           GOOG= c(accuracy(fcast_RandomWalk_GOOG, data_test_GOOG)),
+           UNH= c(accuracy(fcast_RandomWalk_UNH, data_test_UNH)),
+           JPM= c(accuracy(fcast_RandomWalk_JPM, data_test_JPM)),
+           AVGO= c(accuracy(fcast_RandomWalk_AVGO, data_test_AVGO)),
+           V= c(accuracy(fcast_RandomWalk_V, data_test_V)),
+           BAC= c(accuracy(fcast_RandomWalk_BAC, data_test_BAC)),
+           HD= c(accuracy(fcast_RandomWalk_HD, data_test_HD)),
+           MA= c(accuracy(fcast_RandomWalk_MA, data_test_MA)),
+           MRK= c(accuracy(fcast_RandomWalk_MRK, data_test_MRK)),
+           ABBV= c(accuracy(fcast_RandomWalk_ABBV, data_test_ABBV)),
+           LLY= c(accuracy(fcast_RandomWalk_LLY, data_test_LLY)),
+           UPS= c(accuracy(fcast_RandomWalk_UPS, data_test_UPS)),
+           CAT= c(accuracy(fcast_RandomWalk_CAT, data_test_CAT)),
+           SP500= c(accuracy(fcast_RandomWalk_SP500, data_test_SP500)),
+           row.names = c("ME", "RMSE", "MAE","MPE", "MAPE","ACF1", "Theil's U"))
+```
+
+
+## Test for bias
+
+Hvis de udvalgte forecast er unbiased, bør de kunne pålægges restriktionerne at – = 0 og — = 1. Herved vil
+der ikke være niveauforskel, for forecast og faktiske observatione, eller persistent fejlestimation, hvorved
+forecast og faktiske observationer ikke følges ad, hvorved der forekommer diskrepans. Hertil opstilles følgende
+hypoteser
+
+$$H0 = α = 0; β = 0$$
+
+
+
+$$ H1 = α ≠ 0; β ≠ 0$$
+
+
+```{r}
+BiasTest_AAPL=lm(data_test_AAPL~fcast_ARIMA_AAPL)
+H_01_AAPL <- c("(Intercept)=0", "fcast_ARIMA_AAPL=1")
+linearHypothesis(BiasTest_AAPL,H_01_AAPL)
+
+BiasTest_MSFT=lm(data_test_MSFT~fcast_ARIMA_MSFT)
+H_01_MSFT <- c("(Intercept)=0", "fcast_ARIMA_MSFT=1")
+linearHypothesis(BiasTest_MSFT,H_01_MSFT)
+
+BiasTest_AMZN=lm(data_test_AMZN~fcast_ARIMA_AMZN)
+H_01_AMZN <- c("(Intercept)=0", "fcast_ARIMA_AMZN=1")
+linearHypothesis(BiasTest_AMZN,H_01_AMZN)
+
+BiasTest_GOOGL=lm(data_test_GOOGL~fcast_ARIMA_GOOGL)
+H_01_GOOGL <- c("(Intercept)=0", "fcast_ARIMA_GOOGL=1")
+linearHypothesis(BiasTest_GOOGL,H_01_GOOGL)
+
+BiasTest_BRK.B=lm(data_test_BRK.B~fcast_ARIMA_BRK.B)
+H_01_BRK.B <- c("(Intercept)=0", "fcast_ARIMA_BRK.B=1")
+linearHypothesis(BiasTest_BRK.B,H_01_BRK.B)
+
+BiasTest_TSLA=lm(data_test_TSLA~fcast_ARIMA_TSLA)
+H_01_TSLA <- c("(Intercept)=0", "fcast_ARIMA_TSLA=1")
+linearHypothesis(BiasTest_TSLA,H_01_TSLA)
+
+BiasTest_NVDA=lm(data_test_NVDA~fcast_ARIMA_NVDA)
+H_01_NVDA <- c("(Intercept)=0", "fcast_ARIMA_NVDA=1")
+linearHypothesis(BiasTest_NVDA,H_01_NVDA)
+
+BiasTest_GOOG=lm(data_test_GOOG~fcast_ARIMA_GOOG)
+H_01_GOOG <- c("(Intercept)=0", "fcast_ARIMA_GOOG=1")
+linearHypothesis(BiasTest_GOOG,H_01_GOOG)
+
+BiasTest_UNH=lm(data_test_UNH~fcast_ARIMA_UNH)
+H_01_UNH <- c("(Intercept)=0", "fcast_ARIMA_UNH=1")
+linearHypothesis(BiasTest_UNH,H_01_UNH)
+
+BiasTest_JPM=lm(data_test_JPM~fcast_ARIMA_JPM)
+H_01_JPM <- c("(Intercept)=0", "fcast_ARIMA_JPM=1")
+linearHypothesis(BiasTest_JPM,H_01_JPM)
+
+BiasTest_AVGO=lm(data_test_AVGO~fcast_ARIMA_AVGO)
+H_01_AVGO <- c("(Intercept)=0", "fcast_ARIMA_AVGO=1")
+linearHypothesis(BiasTest_AVGO,H_01_AVGO)
+
+BiasTest_V=lm(data_test_V~fcast_ARIMA_V)
+H_01_V <- c("(Intercept)=0", "fcast_ARIMA_V=1")
+linearHypothesis(BiasTest_V,H_01_V)
+
+BiasTest_BAC=lm(data_test_BAC~fcast_ARIMA_BAC)
+H_01_BAC <- c("(Intercept)=0", "fcast_ARIMA_BAC=1")
+linearHypothesis(BiasTest_BAC,H_01_BAC)
+
+BiasTest_HD=lm(data_test_HD~fcast_ARIMA_HD)
+H_01_HD <- c("(Intercept)=0", "fcast_ARIMA_HD=1")
+linearHypothesis(BiasTest_HD,H_01_HD)
+
+BiasTest_MA=lm(data_test_MA~fcast_ARIMA_MA)
+H_01_MA <- c("(Intercept)=0", "fcast_ARIMA_MA=1")
+linearHypothesis(BiasTest_MA,H_01_MA)
+
+BiasTest_MRK=lm(data_test_MRK~fcast_ARIMA_MRK)
+H_01_MRK <- c("(Intercept)=0", "fcast_ARIMA_MRK=1")
+linearHypothesis(BiasTest_MRK,H_01_MRK)
+
+BiasTest_ABBV=lm(data_test_ABBV~fcast_ARIMA_ABBV)
+H_01_ABBV <- c("(Intercept)=0", "fcast_ARIMA_ABBV=1")
+linearHypothesis(BiasTest_ABBV,H_01_ABBV)
+
+BiasTest_LLY=lm(data_test_LLY~fcast_ARIMA_LLY)
+H_01_LLY <- c("(Intercept)=0", "fcast_ARIMA_LLY=1")
+linearHypothesis(BiasTest_LLY,H_01_LLY)
+
+BiasTest_UPS=lm(data_test_UPS~fcast_ARIMA_UPS)
+H_01_UPS <- c("(Intercept)=0", "fcast_ARIMA_UPS=1")
+linearHypothesis(BiasTest_UPS,H_01_UPS)
+
+BiasTest_CAT=lm(data_test_CAT~fcast_ARIMA_CAT)
+H_01_CAT <- c("(Intercept)=0", "fcast_ARIMA_CAT=1")
+linearHypothesis(BiasTest_CAT,H_01_CAT)
+
+BiasTest_SP500=lm(data_test_SP500~fcast_ARIMA_SP500)
+H_01_SP500 <- c("(Intercept)=0", "fcast_ARIMA_SP500=1")
+linearHypothesis(BiasTest_SP500,H_01_SP500)
+```
+
+Du fra ovenstående kan det ses at alle modellerne har en p-værdi over 0,05 og dermed er der ikke signifikant
+forskel i forcastet og den faktiske tidsserie, og dermed er der ikke bias i de opstillede forecast.
+
+
+## Diebold Mariano
+
+
+```{r}
+DM.test(fcast_ARIMA_AAPL, fcast_RandomWalk_AAPL, data_test_AAPL, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_AAPL, fcast_RandomWalk_AAPL, data_test_AAPL, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_AAPL, fcast_RandomWalk_AAPL, data_test_AAPL, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_MSFT, fcast_RandomWalk_MSFT, data_test_MSFT, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_MSFT, fcast_RandomWalk_MSFT, data_test_MSFT, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_MSFT, fcast_RandomWalk_MSFT, data_test_MSFT, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_AMZN, fcast_RandomWalk_AMZN, data_test_AMZN, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_AMZN, fcast_RandomWalk_AMZN, data_test_AMZN, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_AMZN, fcast_RandomWalk_AMZN, data_test_AMZN, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_GOOGL, fcast_RandomWalk_GOOGL, data_test_GOOGL, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_GOOGL, fcast_RandomWalk_GOOGL, data_test_GOOGL, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_GOOGL, fcast_RandomWalk_GOOGL, data_test_GOOGL, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_BRK.B, fcast_RandomWalk_BRK.B, data_test_BRK.B, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_BRK.B, fcast_RandomWalk_BRK.B, data_test_BRK.B, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_BRK.B, fcast_RandomWalk_BRK.B, data_test_BRK.B, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_TSLA, fcast_RandomWalk_TSLA, data_test_TSLA, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_TSLA, fcast_RandomWalk_TSLA, data_test_TSLA, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_TSLA, fcast_RandomWalk_TSLA, data_test_TSLA, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_NVDA, fcast_RandomWalk_NVDA, data_test_NVDA, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_NVDA, fcast_RandomWalk_NVDA, data_test_NVDA, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_NVDA, fcast_RandomWalk_NVDA, data_test_NVDA, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_GOOG, fcast_RandomWalk_GOOG, data_test_GOOG, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_GOOG, fcast_RandomWalk_GOOG, data_test_GOOG, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_GOOG, fcast_RandomWalk_GOOG, data_test_GOOG, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_UNH, fcast_RandomWalk_UNH, data_test_UNH, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_UNH, fcast_RandomWalk_UNH, data_test_UNH, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_UNH, fcast_RandomWalk_UNH, data_test_UNH, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_JPM, fcast_RandomWalk_JPM, data_test_JPM, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_JPM, fcast_RandomWalk_JPM, data_test_JPM, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_JPM, fcast_RandomWalk_JPM, data_test_JPM, loss.type = "SE", h=1, c=FALSE, H1="more")
+DM.test(fcast_ARIMA_AVGO, fcast_RandomWalk_AVGO, data_test_AVGO, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_AVGO, fcast_RandomWalk_AVGO, data_test_AVGO, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_AVGO, fcast_RandomWalk_AVGO, data_test_AVGO, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_V, fcast_RandomWalk_V, data_test_V, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_V, fcast_RandomWalk_V, data_test_V, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_V, fcast_RandomWalk_V, data_test_V, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_BAC, fcast_RandomWalk_BAC, data_test_BAC, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_BAC, fcast_RandomWalk_BAC, data_test_BAC, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_BAC, fcast_RandomWalk_BAC, data_test_BAC, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_HD, fcast_RandomWalk_HD, data_test_HD, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_HD, fcast_RandomWalk_HD, data_test_HD, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_HD, fcast_RandomWalk_HD, data_test_HD, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_MA, fcast_RandomWalk_MA, data_test_MA, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_MA, fcast_RandomWalk_MA, data_test_MA, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_MA, fcast_RandomWalk_MA, data_test_MA, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_MRK, fcast_RandomWalk_MRK, data_test_MRK, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_MRK, fcast_RandomWalk_MRK, data_test_MRK, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_MRK, fcast_RandomWalk_MRK, data_test_MRK, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_ABBV, fcast_RandomWalk_ABBV, data_test_ABBV, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_ABBV, fcast_RandomWalk_ABBV, data_test_ABBV, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_ABBV, fcast_RandomWalk_ABBV, data_test_ABBV, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_LLY, fcast_RandomWalk_LLY, data_test_LLY, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_LLY, fcast_RandomWalk_LLY, data_test_LLY, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_LLY, fcast_RandomWalk_LLY, data_test_LLY, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_UPS, fcast_RandomWalk_UPS, data_test_UPS, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_UPS, fcast_RandomWalk_UPS, data_test_UPS, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_UPS, fcast_RandomWalk_UPS, data_test_UPS, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_CAT, fcast_RandomWalk_CAT, data_test_CAT, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_CAT, fcast_RandomWalk_CAT, data_test_CAT, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_CAT, fcast_RandomWalk_CAT, data_test_CAT, loss.type = "SE", h=1, c=FALSE, H1="more")
+
+DM.test(fcast_ARIMA_SP500, fcast_RandomWalk_SP500, data_test_SP500, loss.type = "SE", h=1, c=FALSE, H1="same")
+DM.test(fcast_ARIMA_SP500, fcast_RandomWalk_SP500, data_test_SP500, loss.type = "SE", h=1, c=FALSE, H1="less")
+DM.test(fcast_ARIMA_SP500, fcast_RandomWalk_SP500, data_test_SP500, loss.type = "SE", h=1, c=FALSE, H1="more")
+```
+
+
+
+# Plot af forecast ARIMA
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(data_AAPL, lwd=1, lty=1, main="One-step-ahead forecast - AAPL", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_AAPL, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_MSFT, lwd=1, lty=1, main="10-step-ahead forecast - MSFT", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_MSFT, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_AMZN, lwd=1, lty=1, main="10-step-ahead forecast - AMZN", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_AMZN, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_GOOGL, lwd=1, lty=1, main="10-step-ahead forecast - GOOGL", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_GOOGL, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(data_BRK.B, lwd=1, lty=1, main="One-step-ahead forecast - BRK.B", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_BRK.B, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_TSLA, lwd=1, lty=1, main="10-step-ahead forecast - TSLA", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_TSLA, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_NVDA, lwd=1, lty=1, main="10-step-ahead forecast - NVDA", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_NVDA, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_GOOG, lwd=1, lty=1, main="10-step-ahead forecast - GOOG", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_GOOG, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(data_UNH, lwd=1, lty=1, main="One-step-ahead forecast - UNH", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_UNH, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_JPM, lwd=1, lty=1, main="10-step-ahead forecast - JPM", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_JPM, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_AVGO, lwd=1, lty=1, main="10-step-ahead forecast - AVGO", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_AVGO, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_V, lwd=1, lty=1, main="10-step-ahead forecast - V", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_V, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(data_BAC, lwd=1, lty=1, main="One-step-ahead forecast - BAC", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_BAC, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_HD, lwd=1, lty=1, main="10-step-ahead forecast - HD", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_HD, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_MA, lwd=1, lty=1, main="10-step-ahead forecast - MA", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_MA, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_MRK, lwd=1, lty=1, main="10-step-ahead forecast - MRK", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_MRK, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(data_ABBV, lwd=1, lty=1, main="One-step-ahead forecast - ABBV", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_ABBV, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_LLY, lwd=1, lty=1, main="10-step-ahead forecast - LLY", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_LLY, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_UPS, lwd=1, lty=1, main="10-step-ahead forecast - UPS", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_UPS, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+
+plot(data_CAT, lwd=1, lty=1, main="10-step-ahead forecast - CAT", xlab="Tid", ylab="Aktieafk
+ast kr.")
+lines(fcast_ARIMA_CAT, col="blue")
+legend("topleft", c("Data", "Forecast"), bty="n", lty = c(1,1), col=c("black", "blue"))
+```
