@@ -1,0 +1,802 @@
+---
+title: "Deskriptiv Statistik"
+author: "Cecilie Brinkholm, Cecilie Fabrin and Jakob Kristiansen"
+date: "01/06/2023"
+output: html_document
+---
+
+
+
+```{r setup, include=FALSE}
+rm(list = ls())
+```
+
+```{r, include = FALSE}
+library(tidyverse)
+library(magrittr)
+library(vroom)
+library(tidymodels)
+library(keras)
+library(tensorflow)
+library(dplyr)
+library(tidytext)
+library(tidymodels)
+library(dplyr)
+library(naniar)
+library(h2o) 
+library(caTools)
+library(caret)
+library(pROC)
+library(tidyquant)
+library(timetk)
+library(ggplot2)
+library(patchwork)
+library(fable)
+library(forecast)
+library(tibble)
+library(readr)
+library(tidyquant)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(e1071)
+library(data.table)
+library(RColorBrewer)
+library(tseries)
+library(urca)
+library(readxl)
+library(tframePlus)
+library(xts)
+library(PerformanceAnalytics)
+library(lubridate)
+library(corrplot)
+```
+
+
+
+# Data overblik
+
+Indlæser data.
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/JakobTheSlott/Kandidat/main/Assets.csv")
+SP500 <- read.csv("https://raw.githubusercontent.com/JakobTheSlott/Kandidat/main/SP%20500.csv")
+```
+
+
+
+```{r}
+head(data)
+```
+
+Ændre navn af data kollonen i datasættet data.
+
+```{r}
+colnames(data)[1]  <- "Date"
+```
+
+Laver Date kollonnen om til data-typen date.
+
+```{r} 
+data$Date <- as.Date(data$Date, "%d/%m/%Y")
+```
+
+```{r} 
+SP500$Date <- as.Date(SP500$Date, "%d/%m/%Y")
+```
+
+
+Afkorter data i overensstemmelse med specialets valgte periode. 
+
+```{r}
+SP500 %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+```{r}
+data %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+
+```{r}
+data %<>% arrange(Date)
+SP500 %<>% arrange(Date)
+```
+
+
+Tjekker for eventuelle na-værdier.
+
+```{r}
+data %>% summarise_all(function(x) sum(is.na(x)))
+```
+
+
+Tjekker at alle data-typer er rigtige. 
+
+```{r}
+sapply(data, class)
+```
+
+Tjek af antal observationer årligt.
+
+```{r}
+tab <- table(cut(data$Date, 'year'))
+```
+
+
+```{r}
+data.frame(Date=format(as.Date(names(tab)), '%Y'),
+ Frequency=as.vector(tab))
+```
+
+
+
+# Korrelation af data
+
+Opsætning af korrelationsmatrice for de udvalgte aktiver.
+
+```{r}
+dataWdates <- merge(data,SP500,by="Date")
+```
+
+
+```{r}
+A_data <- merge(data,SP500,by="Date")
+```
+
+```{r}
+mydata <- A_data %>%
+ select(-Date)
+```
+
+
+
+# Beregning af deskriptiv statistik
+
+```{r, include=FALSE}
+library(tseries)
+```
+
+
+# Deskriptiv Statistik for Aktiekurser
+
+```{r}
+my_data <- mydata
+```
+
+```{r}
+my.list <- data.frame(Mean = c(sapply(my_data, mean)), Std.dev = c(sapply(my_data, sd)), Varians = c(sapply(my_data, var))
+                      ,Skewnwss = c(sapply(my_data, skewness))
+                      ,Kurtosis = c(col_jarquebera(my_data)$kurtosis)             
+                      ,JB_Pvalue = c(col_jarquebera(my_data)$pvalue)
+                      ,MinValue = c(sapply(my_data, min))
+                      ,MaxValue = c(sapply(my_data, max))
+                      )
+```
+
+```{r}
+my.list
+```
+
+
+
+
+# Desktiptiv Statistik Afkast
+
+### Beregning af afkast
+
+```{r}
+A_data <- my_data %>% 
+  mutate_if(is.numeric, funs(. - lag(., 1))) %>%
+  drop_na()
+```
+
+### Beregning af Procentvise afkast
+
+```{r}
+AP_data <- my_data %>% 
+  mutate_if(is.numeric, funs((. - lag(., 1))/lag(.,1))) %>%
+  drop_na()
+```
+
+
+### Beregning af Information Ratio, Tracking Error og Beta værdier
+
+
+```{r}
+ReturnDiff_data <- AP_data %>% 
+  mutate_if(is.numeric, funs((. - AP_data$S.P.500))) %>%
+  drop_na()
+```
+
+
+```{r}
+my.list.tib <- data.frame(TrackingError = c(sapply(ReturnDiff_data, sd)),
+                          InformationRatio = c(sapply(ReturnDiff_data, mean)) / c(sapply(ReturnDiff_data, sd)),
+                          BetaVærdi = c(cov(AP_data, AP_data$S.P.500) / var(AP_data$S.P.500))
+                      )
+```
+
+
+```{r}
+my.list.tib
+```
+
+
+```{r}
+my.list.p <- data.frame(Mean = c(sapply(AP_data, mean)), Std.dev = c(sapply(AP_data, sd)), Varians = c(sapply(AP_data, var))
+                      ,Skewnwss = c(sapply(AP_data, skewness))
+                      ,Kurtosis = c(col_jarquebera(AP_data)$kurtosis)             
+                      ,JB_Pvalue = c(col_jarquebera(AP_data)$pvalue)
+                      ,MinValue = c(sapply(AP_data, min))
+                      ,MaxValue = c(sapply(AP_data, max))
+                      )
+```
+
+```{r}
+my.list.p
+```
+
+
+## Korrelationsmatrice
+
+```{r}
+mydata.cor = cor(AP_data)
+```
+
+```{r}
+corrplot(mydata.cor, type = "upper", , order = "hclust", method = 'number', cl.ratio = 0.2,
+         tl.col = "black", tl.srt = 90, tl.cex =0.8, number.cex=0.8)
+```
+
+```{r}
+corrplot(mydata.cor, type = "upper", , order = "hclust",
+         tl.col = "black", tl.srt = 90, tl.cex =0.8)
+```
+
+
+
+
+### Beregning af afkast
+
+```{r}
+A_dataWdates <- dataWdates %>% 
+  mutate_if(is.numeric, funs(. - lag(., 1))) %>%
+  drop_na()
+```
+
+### Beregning af Procentvise afkast
+
+```{r}
+AP_dataWdates <- dataWdates %>% 
+  mutate_if(is.numeric, funs((. - lag(., 1))/lag(.,1))) %>%
+  drop_na()
+```
+
+
+
+# Plot procentvise afkast
+
+```{r}
+# IT plot
+plot_A1 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = AAPL)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % AAPL - IT")
+
+plot_A2 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = MSFT)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Microsoft Inc. - IT") 
+
+plot_A3 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = NVDA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Nvidia - IT")
+
+plot_A4 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = AVGO)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Broadcom Inc. - IT") 
+
+plot_A5 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = V)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Visa Inc. A - IT") 
+
+plot_A6 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = MA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Mastercard Inc. A - IT") 
+
+# Industriplot
+
+plot_A7 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = CAT)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Caterpillar Inc. - Industri")
+
+plot_A8 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = UPS)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % United Parcel Service Inc. - Industri") 
+
+# Sundhedplot
+
+plot_A9 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = UNH)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % United Health Group Inc. - Sundhed")
+
+plot_A10 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = MRK)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Merck & Co. - Sundhed") 
+
+plot_A11 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = ABBV)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Abbvie Inc. - Sundhed")
+
+plot_A12 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = LLY)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Eli Lilly - Sundhed") 
+
+
+
+# Finansplot
+
+plot_A13 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = BRK.B)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Berkshire Hathaway Inc. B - Finans")
+ 
+plot_A14 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = JPM)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % JP Morgan Chase % Co. - Finans") 
+
+plot_A15 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = BAC)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Bank Of America Corp. - Finans")
+
+
+# Diskretionært forbrug
+
+
+plot_A16 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = AMZN)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Amazon.com Inc. - Forbrug")
+
+plot_A17 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = TSLA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Tesla Inc. - Forbrug") 
+
+plot_A18 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = HD)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Home Depot Inc. - Forbrug")
+
+
+# Kommunikations servicesplot
+plot_A19 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = GOOG)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Alphabet Inc. C - Kommunikation") 
+
+plot_A20 <- AP_dataWdates %>%
+  ggplot(aes(x = Date, y = GOOGL)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast %") +
+  ggtitle("Aktieafkast % Alphabet Inc. A - Kommunikation")
+
+
+```
+
+Procentvise afkast plot
+
+
+
+```{r}
+plot_A1 +plot_A2 +plot_A3 +plot_A4 +plot_A5 +plot_A6
+```
+
+
+```{r}
+plot_A7 +plot_A8 +plot_A9 +plot_A10 +plot_A11 +plot_A12
+```
+
+
+```{r}
+plot_A13 +plot_A14 +plot_A15 +plot_A16 +plot_A17 +plot_A18
+```
+
+```{r}
+plot_A19 +plot_A20 +plot_A21_P +plot_A16 +plot_A17 +plot_A18
+```
+
+
+
+# Plot nominelle afkast
+
+```{r}
+# IT plot
+plot_A1 <- dataWdates%>%
+  ggplot(aes(x = Date, y = AAPL)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast AAPL - IT")
+
+plot_A2 <- dataWdates%>%
+  ggplot(aes(x = Date, y = MSFT)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Microsoft Inc. - IT") 
+
+plot_A3 <- dataWdates%>%
+  ggplot(aes(x = Date, y = NVDA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Nvidia - IT")
+
+plot_A4 <- dataWdates%>%
+  ggplot(aes(x = Date, y = AVGO)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Broadcom Inc. - IT") 
+
+plot_A5 <- dataWdates%>%
+  ggplot(aes(x = Date, y = V)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Visa Inc. A - IT") 
+
+plot_A6 <- dataWdates%>%
+  ggplot(aes(x = Date, y = MA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Mastercard Inc. A - IT") 
+
+# Industriplot
+
+plot_A7 <- dataWdates%>%
+  ggplot(aes(x = Date, y = CAT)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Caterpillar Inc. - Industri")
+
+plot_A8 <- dataWdates%>%
+  ggplot(aes(x = Date, y = UPS)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast United Parcel Service Inc. - Industri") 
+
+# Sundhedplot
+
+plot_A9 <- dataWdates%>%
+  ggplot(aes(x = Date, y = UNH)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast United Health Group Inc. - Sundhed")
+
+plot_A10 <- dataWdates%>%
+  ggplot(aes(x = Date, y = MRK)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Merck & Co. - Sundhed") 
+
+plot_A11 <- dataWdates%>%
+  ggplot(aes(x = Date, y = ABBV)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Abbvie Inc. - Sundhed")
+
+plot_A12 <- dataWdates%>%
+  ggplot(aes(x = Date, y = LLY)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Eli Lilly - Sundhed") 
+
+
+
+# Finansplot
+
+plot_A13 <- dataWdates%>%
+  ggplot(aes(x = Date, y = BRK.B)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Berkshire Hathaway Inc. B - Finans")
+ 
+plot_A14 <- dataWdates%>%
+  ggplot(aes(x = Date, y = JPM)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast JP Morgan Chase % Co. - Finans") 
+
+plot_A15 <- dataWdates%>%
+  ggplot(aes(x = Date, y = BAC)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Bank Of America Corp. - Finans")
+
+
+# Diskretionært forbrug
+
+
+plot_A16 <- dataWdates%>%
+  ggplot(aes(x = Date, y = AMZN)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Amazon.com Inc. - Forbrug")
+
+plot_A17 <- dataWdates%>%
+  ggplot(aes(x = Date, y = TSLA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Tesla Inc. - Forbrug") 
+
+plot_A18 <- dataWdates%>%
+  ggplot(aes(x = Date, y = HD)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Home Depot Inc. - Forbrug")
+
+
+# Kommunikations servicesplot
+plot_A19 <- dataWdates%>%
+  ggplot(aes(x = Date, y = GOOG)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Alphabet Inc. C - Kommunikation") 
+
+plot_A20 <- dataWdates%>%
+  ggplot(aes(x = Date, y = GOOGL)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast Alphabet Inc. A - Kommunikation")
+
+
+# SP500plot
+plot_A21 <- A_data%>%
+  ggplot(aes(x = Date, y = SP500)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktieafkast") +
+  ggtitle("Aktieafkast SP500")
+
+```
+
+
+
+
+
+```{r}
+plot_A1 +plot_A2 +plot_A3 +plot_A4 +plot_A5 +plot_A6
+```
+
+
+```{r}
+plot_A7 +plot_A8 +plot_A9 +plot_A10 +plot_A11 +plot_A12
+```
+
+
+```{r}
+plot_A13 +plot_A14 +plot_A15 +plot_A16 +plot_A17 +plot_A18
+```
+
+```{r}
+plot_A19 +plot_A20 +plot_A21 +plot_A16 +plot_A17 +plot_A18
+```
+
+
+
+
+# Plot aktiekurser
+
+```{r}
+# IT Plot
+plot1 <- data %>%
+  ggplot(aes(x = Date, y = AAPL)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs AAPL - IT")
+
+plot2 <- data %>%
+  ggplot(aes(x = Date, y = MSFT)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Microsoft Inc. - IT") 
+
+plot3 <- data %>%
+  ggplot(aes(x = Date, y = NVDA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Nvidia - IT")
+
+plot4 <- data %>%
+  ggplot(aes(x = Date, y = AVGO)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Broadcom Inc. - IT") 
+
+plot5 <- data %>%
+  ggplot(aes(x = Date, y = V)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Visa Inc. A - IT") 
+
+plot6 <- data %>%
+  ggplot(aes(x = Date, y = MA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Mastercard Inc. A - IT") 
+
+# Industri Plot
+
+plot7 <- data %>%
+  ggplot(aes(x = Date, y = CAT)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Caterpillar Inc. - Industri")
+
+plot8 <- data %>%
+  ggplot(aes(x = Date, y = UPS)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs United Parcel Service Inc. - Industri") 
+
+# Sundhed Plot
+
+plot9 <- data %>%
+  ggplot(aes(x = Date, y = UNH)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs United Health Group Inc. - Sundhed")
+
+plot10 <- data %>%
+  ggplot(aes(x = Date, y = MRK)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Merck & Co. - Sundhed") 
+
+plot11 <- data %>%
+  ggplot(aes(x = Date, y = ABBV)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Abbvie Inc. - Sundhed")
+
+plot12 <- data %>%
+  ggplot(aes(x = Date, y = LLY)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Eli Lilly - Sundhed") 
+
+
+
+# Finans Plot
+
+plot13 <- data %>%
+  ggplot(aes(x = Date, y = BRK.B)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Berkshire Hathaway Inc. B - Finans")
+ 
+plot14 <- data %>%
+  ggplot(aes(x = Date, y = JPM)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs JP Morgan Chase % Co. - Finans") 
+
+plot15 <- data %>%
+  ggplot(aes(x = Date, y = BAC)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Bank Of America Corp. - Finans")
+
+
+# Diskretionært forbrug
+
+
+plot16 <- data %>%
+  ggplot(aes(x = Date, y = AMZN)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Amazon.com Inc. - Forbrug")
+
+plot17 <- data %>%
+  ggplot(aes(x = Date, y = TSLA)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Tesla Inc. - Forbrug") 
+
+plot18 <- data %>%
+  ggplot(aes(x = Date, y = HD)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Home Depot Inc. - Forbrug")
+
+
+# Kommunikations services Plot
+plot19 <- data %>%
+  ggplot(aes(x = Date, y = GOOG)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Alphabet Inc. C - Kommunikation") 
+
+plot20 <- data %>%
+  ggplot(aes(x = Date, y = GOOGL)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs Alphabet Inc. A - Kommunikation")
+
+
+# SP500 Plot
+plot21 <- SP500 %>%
+  ggplot(aes(x = Date, y = S.P.500)) +
+  geom_line(colour='darkblue') +
+  labs(x = 'Date', y = "Aktiekurs") +
+  ggtitle("Aktiekurs SP500")
+
+```
+
+
+
+```{r}
+plot1 + plot2 + plot3 + plot4 + plot5 + plot6
+```
+
+
+```{r}
+plot7 + plot8 + plot9 + plot10 + plot11 + plot12
+```
+
+
+```{r}
+plot13 + plot14 + plot15 + plot16 + plot17 + plot18
+```
+
+```{r}
+plot19 + plot20 + plot21 + plot16 + plot17 + plot18
+```
+
+
+```{r}
+plot1 + plot20 + plot8 + plot11 + plot14 + plot16
+```
+
+
+```{r}
+plot21 + plot_A21 + plot_A21_P +plot21 + plot_A21 + plot_A21_P 
+```
+
+
+
+```{r}
+plot_A1 + plot_A20 + plot_A8 + plot_A11 + plot_A14 + plot_A16
+```
+
+
+
+
+
