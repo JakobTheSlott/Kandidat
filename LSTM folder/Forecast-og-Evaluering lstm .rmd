@@ -1,0 +1,2544 @@
+---
+title: "Forecast og Evaluering"
+author: "Cecilie Brinkholm, Cecilie Fabrin og Jakob Kristiansen"
+date: "01/06/2023"
+output: html_document
+---
+
+```{r, include = FALSE}
+library(tidyverse)
+library(magrittr)
+library(vroom)
+library(tidymodels)
+library(keras)
+library(tensorflow)
+library(dplyr)
+library(tidytext)
+library(tidymodels)
+library(dplyr)
+library(naniar)
+library(h2o) 
+library(caTools)
+library(caret)
+library(pROC)
+library(tidyquant)
+library(timetk)
+library(ggplot2)
+library(patchwork)
+library(fable)
+library(forecast)
+library(tibble)
+library(readr)
+library(tidyquant)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(e1071)
+library(data.table)
+library(RColorBrewer)
+library(tseries)
+library(urca)
+library(readxl)
+library(tframePlus)
+library(xts)
+library(PerformanceAnalytics)
+library(lubridate)
+library(corrplot)
+```
+
+
+
+# Data overblik
+
+Indlæser data.
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/JakobTheSlott/Kandidat/main/Assets.csv")
+SP500 <- read.csv("https://raw.githubusercontent.com/JakobTheSlott/Kandidat/main/SP%20500.csv")
+```
+
+Ændre navn af data kollonen i datasættet data.
+
+```{r}
+colnames(data)[1]  <- "Date"
+```
+
+Laver Date kollonnen om til data-typen date.
+
+```{r} 
+data$Date <- as.Date(data$Date, "%d/%m/%Y")
+```
+
+```{r} 
+SP500$Date <- as.Date(SP500$Date, "%d/%m/%Y")
+```
+
+
+Afkorter data i overensstemmelse med specialets valgte periode. 
+
+```{r}
+SP500 %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+```{r}
+data %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+
+```{r}
+data %<>% arrange(Date)
+SP500 %<>% arrange(Date)
+```
+
+
+Med henblik på at anvende ARIMA modeller, er det nødvendigt at der forekommer samme antal observationer årligt, da dette skaber grundlag for en ensartet frekvens når data omdannes til et ts objekt i R. Der fjernes derfor tilfældige observationer de år hvor der forekommer flere end 251 observationer.
+
+```{r}
+Adata <- data[-c(350, 700 , 1000, 1900, 1600, 2000, 2100), ]
+```
+
+```{r}
+data <- data[-c(1, 350, 700 , 1000, 1900, 1600, 2000, 2100), ]
+```
+
+```{r}
+SP500 <- SP500[-c(1, 350, 700 , 1000, 1900, 1600, 2000, 2100), ]
+```
+
+
+
+
+# Beregning af afkast
+
+```{r}
+A_data <- Adata %>% 
+  mutate_if(is.numeric, funs(. - lag(., 1))) %>%
+  drop_na()
+```
+
+```{r}
+A_data %<>% filter(Date<=as.Date('2023-01-01') & Date >= ('2013-01-01'))
+```
+
+
+
+# Data omdannes til ts objekter
+```{r}
+data_AAPL <- ts(data$AAPL, start=2013, frequency = 251)
+data_MSFT <- ts(data$MSFT, start=2013, frequency = 251)
+data_AMZN <- ts(data$AMZN, start=2013, frequency = 251)
+data_GOOGL <- ts(data$GOOGL, start=2013, frequency = 251)
+data_BRK.B <- ts(data$BRK.B, start=2013, frequency = 251)
+data_TSLA <- ts(data$TSLA, start=2013, frequency = 251)
+data_NVDA <- ts(data$NVDA, start=2013, frequency = 251)
+data_GOOG <- ts(data$GOOG, start=2013, frequency = 251)
+data_UNH <- ts(data$UNH, start=2013, frequency = 251)
+data_JPM <- ts(data$JPM, start=2013, frequency = 251)
+data_AVGO <- ts(data$AVGO, start=2013, frequency = 251)
+data_V <- ts(data$V, start=2013, frequency = 251)
+data_BAC <- ts(data$BAC, start=2013, frequency = 251)
+data_HD <- ts(data$HD, start=2013, frequency = 251)
+data_MA <- ts(data$MA, start=2013, frequency = 251)
+data_MRK <- ts(data$MRK, start=2013, frequency = 251)
+data_ABBV <- ts(data$ABBV, start=2013, frequency = 251)
+data_LLY <- ts(data$LLY, start=2013, frequency = 251)
+data_UPS <- ts(data$UPS, start=2013, frequency = 251)
+data_CAT <- ts(data$CAT, start=2013, frequency = 251)
+data_AAPL <- ts(data$AAPL, start=2013, frequency = 251)
+data_SP500 <- ts(SP500$S.P.500, start=2013, frequency = 251)
+```
+
+
+```{r}
+data_train_AAPL <- window(data_AAPL,end=c(2019,251))
+data_test_AAPL <- window(data_AAPL,start=c(2020,1))
+data_train_MSFT <- window(data_MSFT,end=c(2019,251))
+data_test_MSFT <- window(data_MSFT,start=c(2020,1))
+data_train_AMZN <- window(data_AMZN,end=c(2019,251))
+data_test_AMZN <- window(data_AMZN,start=c(2020,1))
+data_train_GOOGL <- window(data_GOOGL,end=c(2019,251))
+data_test_GOOGL <- window(data_GOOGL,start=c(2020,1))
+data_train_BRK.B <- window(data_BRK.B,end=c(2019,251))
+data_test_BRK.B <- window(data_BRK.B,start=c(2020,1))
+data_train_TSLA <- window(data_TSLA,end=c(2019,251))
+data_test_TSLA <- window(data_TSLA,start=c(2020,1))
+data_train_NVDA <- window(data_NVDA,end=c(2019,251))
+data_test_NVDA <- window(data_NVDA,start=c(2020,1))
+data_train_GOOG <- window(data_GOOG,end=c(2019,251))
+data_test_GOOG <- window(data_GOOG,start=c(2020,1))
+data_train_UNH <- window(data_UNH,end=c(2019,251))
+data_test_UNH <- window(data_UNH,start=c(2020,1))
+data_train_JPM <- window(data_JPM,end=c(2019,251))
+data_test_JPM <- window(data_JPM,start=c(2020,1))
+data_train_AVGO <- window(data_AVGO,end=c(2019,251))
+data_test_AVGO <- window(data_AVGO,start=c(2020,1))
+data_train_V <- window(data_V,end=c(2019,251))
+data_test_V <- window(data_V,start=c(2020,1))
+data_train_BAC<- window(data_BAC,end=c(2019,251))
+data_test_BAC <- window(data_BAC,start=c(2020,1))
+data_train_HD <- window(data_HD,end=c(2019,251))
+data_test_HD <- window(data_HD,start=c(2020,1))
+data_train_MA <- window(data_MA,end=c(2019,251))
+data_test_MA <- window(data_MA,start=c(2020,1))
+data_train_MRK <- window(data_MRK,end=c(2019,251))
+data_test_MRK <- window(data_MRK,start=c(2020,1))
+data_train_ABBV <- window(data_ABBV,end=c(2019,251))
+data_test_ABBV <- window(data_ABBV,start=c(2020,1))
+data_train_LLY <- window(data_LLY,end=c(2019,251))
+data_test_LLY <- window(data_LLY,start=c(2020,1))
+data_train_UPS <- window(data_UPS,end=c(2019,251))
+data_test_UPS <- window(data_UPS,start=c(2020,1))
+data_train_CAT <- window(data_CAT,end=c(2019,251))
+data_test_CAT <- window(data_CAT,start=c(2020,1))
+data_train_SP500 <- window(data_SP500,end=c(2019,251))
+data_test_SP500 <- window(data_SP500,start=c(2020,1))
+```
+
+
+```{r}
+data_train_A <- A_data %>% filter(Date <= "2019-12-31")
+data_test_A <- A_data %>% filter(Date >= "2020-01-01")
+```
+
+
+```{r}
+data_train_lag <- data %>% filter(Date <= "2019-12-31")
+data_test_lag <- data %>% filter(Date >= "2019-12-31") %>% filter(Date <= "2022-12-29")
+```
+
+```{r}
+data_train <- data %>% filter(Date <= "2019-12-31")
+data_test <- data %>% filter(Date >= "2020-01-01") 
+```
+
+
+```{r, warning=FALSE}
+reverse_norm<- function(x, mean, sds) {
+  x_re <- (x * sds) + mean
+  return(x_re)
+  }
+```
+
+```{r}
+n_lag = 10
+```
+
+
+# Forecast LSTM
+
+
+### GOOGL LSTM
+
+```{r, warning=FALSE}
+GOOGL_recipe <- data_train_A %>%
+ recipe(GOOGL ~ .) %>% 
+  step_normalize(GOOGL) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+GOOGL_prep_history <- tibble(
+  mean = GOOGL_recipe$steps[[1]]$means,
+  sds = GOOGL_recipe$steps[[1]]$sds
+)
+
+GOOGL_prep_history
+```
+
+```{r, warning=FALSE}
+GOOGL_x_train <- GOOGL_recipe %>% juice() 
+GOOGL_y_train <- GOOGL_recipe %>%  juice() %>%
+  mutate(value = GOOGL %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+GOOGL_x_test <- GOOGL_recipe %>% bake(data_test_A) 
+GOOGL_y_test <- GOOGL_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = GOOGL %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+GOOGL_x_train_arr <- GOOGL_x_train %>% pull(GOOGL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+GOOGL_x_test_arr <- GOOGL_x_test %>% pull(GOOGL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+GOOGL_y_train_arr <- GOOGL_y_train %>% pull(GOOGL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+GOOGL_y_test_arr <- GOOGL_y_test %>% pull(GOOGL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+GOOGL_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(GOOGL_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(GOOGL_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+GOOGL_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+GOOGL_hist_model <- GOOGL_model %>% fit(x = GOOGL_x_train_arr, 
+                            y          = GOOGL_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+### GOOG LSTM
+
+```{r, warning=FALSE}
+GOOG_recipe <- data_train_A %>%
+ recipe(GOOG ~ .) %>% 
+  step_normalize(GOOG) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+GOOG_prep_history <- tibble(
+  mean = GOOG_recipe$steps[[1]]$means,
+  sds = GOOG_recipe$steps[[1]]$sds
+)
+
+GOOG_prep_history
+```
+
+```{r, warning=FALSE}
+GOOG_x_train <- GOOG_recipe %>% juice() 
+GOOG_y_train <- GOOG_recipe %>%  juice() %>%
+  mutate(value = GOOG %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+GOOG_x_test <- GOOG_recipe %>% bake(data_test_A) 
+GOOG_y_test <- GOOG_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = GOOG %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+GOOG_x_train_arr <- GOOG_x_train %>% pull(GOOG) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+GOOG_x_test_arr <- GOOG_x_test %>% pull(GOOG) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+GOOG_y_train_arr <- GOOG_y_train %>% pull(GOOG) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+GOOG_y_test_arr <- GOOG_y_test %>% pull(GOOG) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+GOOG_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(GOOG_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(GOOG_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+GOOG_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+GOOG_hist_model <- GOOG_model %>% fit(x = GOOG_x_train_arr, 
+                            y          = GOOG_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+### AMZN LSTM
+
+```{r, warning=FALSE}
+AMZN_recipe <- data_train_A %>%
+ recipe(AMZN ~ .) %>% 
+  step_normalize(AMZN) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+AMZN_prep_history <- tibble(
+  mean = AMZN_recipe$steps[[1]]$means,
+  sds = AMZN_recipe$steps[[1]]$sds
+)
+
+AMZN_prep_history
+```
+
+```{r, warning=FALSE}
+AMZN_x_train <- AMZN_recipe %>% juice() 
+AMZN_y_train <- AMZN_recipe %>%  juice() %>%
+  mutate(value = AMZN %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+AMZN_x_test <- AMZN_recipe %>% bake(data_test_A) 
+AMZN_y_test <- AMZN_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = AMZN %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+AMZN_x_train_arr <- AMZN_x_train %>% pull(AMZN) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+AMZN_x_test_arr <- AMZN_x_test %>% pull(AMZN) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+AMZN_y_train_arr <- AMZN_y_train %>% pull(AMZN) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+AMZN_y_test_arr <- AMZN_y_test %>% pull(AMZN) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+AMZN_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(AMZN_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+AMZN_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+AMZN_hist_model <- AMZN_model %>% fit(x = AMZN_x_train_arr, 
+                            y          = AMZN_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+### TSLA LSTM
+
+```{r, warning=FALSE}
+TSLA_recipe <- data_train_A %>%
+ recipe(TSLA ~ .) %>% 
+  step_normalize(TSLA) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+TSLA_prep_history <- tibble(
+  mean = TSLA_recipe$steps[[1]]$means,
+  sds = TSLA_recipe$steps[[1]]$sds
+)
+
+TSLA_prep_history
+```
+
+```{r, warning=FALSE}
+TSLA_x_train <- TSLA_recipe %>% juice() 
+TSLA_y_train <- TSLA_recipe %>%  juice() %>%
+  mutate(value = TSLA %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+TSLA_x_test <- TSLA_recipe %>% bake(data_test_A) 
+TSLA_y_test <- TSLA_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = TSLA %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+TSLA_x_train_arr <- TSLA_x_train %>% pull(TSLA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+TSLA_x_test_arr <- TSLA_x_test %>% pull(TSLA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+TSLA_y_train_arr <- TSLA_y_train %>% pull(TSLA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+TSLA_y_test_arr <- TSLA_y_test %>% pull(TSLA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+TSLA_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(TSLA_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(TSLA_x_train_arr)[-1],
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+TSLA_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+TSLA_hist_model <- TSLA_model %>% fit(x = TSLA_x_train_arr, 
+                            y          = TSLA_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### HD LSTM
+
+```{r, warning=FALSE}
+HD_recipe <- data_train_A %>%
+ recipe(HD ~ .) %>% 
+  step_normalize(HD) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+HD_prep_history <- tibble(
+  mean = HD_recipe$steps[[1]]$means,
+  sds = HD_recipe$steps[[1]]$sds
+)
+
+HD_prep_history
+```
+
+```{r, warning=FALSE}
+HD_x_train <- HD_recipe %>% juice() 
+HD_y_train <- HD_recipe %>%  juice() %>%
+  mutate(value = HD %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+HD_x_test <- HD_recipe %>% bake(data_test_A) 
+HD_y_test <- HD_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = HD %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+HD_x_train_arr <- HD_x_train %>% pull(HD) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+HD_x_test_arr <- HD_x_test %>% pull(HD) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+HD_y_train_arr <- HD_y_train %>% pull(HD) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+HD_y_test_arr <- HD_y_test %>% pull(HD) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+HD_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(HD_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(HD_x_train_arr)[-1],
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+HD_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+HD_hist_model <- HD_model %>% fit(x = HD_x_train_arr, 
+                            y          = HD_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+
+### JPM LSTM
+
+```{r, warning=FALSE}
+JPM_recipe <- data_train_A %>%
+ recipe(JPM ~ .) %>% 
+  step_normalize(JPM) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+JPM_prep_history <- tibble(
+  mean = JPM_recipe$steps[[1]]$means,
+  sds = JPM_recipe$steps[[1]]$sds
+)
+
+JPM_prep_history
+```
+
+```{r, warning=FALSE}
+JPM_x_train <- JPM_recipe %>% juice() 
+JPM_y_train <- JPM_recipe %>%  juice() %>%
+  mutate(value = JPM %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+JPM_x_test <- JPM_recipe %>% bake(data_test_A) 
+JPM_y_test <- JPM_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = JPM %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+JPM_x_train_arr <- JPM_x_train %>% pull(JPM) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+JPM_x_test_arr <- JPM_x_test %>% pull(JPM) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+JPM_y_train_arr <- JPM_y_train %>% pull(JPM) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+JPM_y_test_arr <- JPM_y_test %>% pull(JPM) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+JPM_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(JPM_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 8, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(JPM_x_train_arr)[-1],
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+JPM_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+JPM_hist_model <- JPM_model %>% fit(x = JPM_x_train_arr, 
+                            y          = JPM_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### BRK.B LSTM
+
+```{r, warning=FALSE}
+BRK.B_recipe <- data_train_A %>%
+ recipe(BRK.B ~ .) %>% 
+  step_normalize(BRK.B) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+BRK.B_prep_history <- tibble(
+  mean = BRK.B_recipe$steps[[1]]$means,
+  sds = BRK.B_recipe$steps[[1]]$sds
+)
+
+BRK.B_prep_history
+```
+
+```{r, warning=FALSE}
+BRK.B_x_train <- BRK.B_recipe %>% juice() 
+BRK.B_y_train <- BRK.B_recipe %>%  juice() %>%
+  mutate(value = BRK.B %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+BRK.B_x_test <- BRK.B_recipe %>% bake(data_test_A) 
+BRK.B_y_test <- BRK.B_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = BRK.B %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+BRK.B_x_train_arr <- BRK.B_x_train %>% pull(BRK.B) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+BRK.B_x_test_arr <- BRK.B_x_test %>% pull(BRK.B) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+BRK.B_y_train_arr <- BRK.B_y_train %>% pull(BRK.B) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+BRK.B_y_test_arr <- BRK.B_y_test %>% pull(BRK.B) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+BRK.B_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(BRK.B_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(BRK.B_x_train_arr)[-1],
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+BRK.B_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+BRK.B_hist_model <- BRK.B_model %>% fit(x = BRK.B_x_train_arr, 
+                            y          = BRK.B_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 16,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### UPS LSTM
+
+```{r, warning=FALSE}
+UPS_recipe <- data_train_A %>%
+ recipe(UPS ~ .) %>% 
+  step_normalize(UPS) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+UPS_prep_history <- tibble(
+  mean = UPS_recipe$steps[[1]]$means,
+  sds = UPS_recipe$steps[[1]]$sds
+)
+
+UPS_prep_history
+```
+
+```{r, warning=FALSE}
+UPS_x_train <- UPS_recipe %>% juice() 
+UPS_y_train <- UPS_recipe %>%  juice() %>%
+  mutate(value = UPS %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+UPS_x_test <- UPS_recipe %>% bake(data_test_A) 
+UPS_y_test <- UPS_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = UPS %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+UPS_x_train_arr <- UPS_x_train %>% pull(UPS) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+UPS_x_test_arr <- UPS_x_test %>% pull(UPS) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+UPS_y_train_arr <- UPS_y_train %>% pull(UPS) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+UPS_y_test_arr <- UPS_y_test %>% pull(UPS) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+UPS_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(UPS_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+UPS_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+UPS_hist_model <- UPS_model %>% fit(x = UPS_x_train_arr, 
+                            y          = UPS_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### AAPL LSTM
+
+```{r, warning=FALSE}
+AAPL_recipe <- data_train_A %>%
+ recipe(AAPL ~ .) %>% 
+  step_normalize(AAPL) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+AAPL_prep_history <- tibble(
+  mean = AAPL_recipe$steps[[1]]$means,
+  sds = AAPL_recipe$steps[[1]]$sds
+)
+
+AAPL_prep_history
+```
+
+```{r, warning=FALSE}
+AAPL_x_train <- AAPL_recipe %>% juice() 
+AAPL_y_train <- AAPL_recipe %>%  juice() %>%
+  mutate(value = AAPL %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+AAPL_x_test <- AAPL_recipe %>% bake(data_test_A) 
+AAPL_y_test <- AAPL_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = AAPL %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+AAPL_x_train_arr <- AAPL_x_train %>% pull(AAPL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+AAPL_x_test_arr <- AAPL_x_test %>% pull(AAPL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+AAPL_y_train_arr <- AAPL_y_train %>% pull(AAPL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+AAPL_y_test_arr <- AAPL_y_test %>% pull(AAPL) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+AAPL_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(AAPL_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+AAPL_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+AAPL_hist_model <- AAPL_model %>% fit(x = AAPL_x_train_arr, 
+                            y          = AAPL_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 16,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+### MSFT LSTM
+
+```{r, warning=FALSE}
+MSFT_recipe <- data_train_A %>%
+ recipe(MSFT ~ .) %>% 
+  step_normalize(MSFT) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+MSFT_prep_history <- tibble(
+  mean = MSFT_recipe$steps[[1]]$means,
+  sds = MSFT_recipe$steps[[1]]$sds
+)
+
+MSFT_prep_history
+```
+
+```{r, warning=FALSE}
+MSFT_x_train <- MSFT_recipe %>% juice() 
+MSFT_y_train <- MSFT_recipe %>%  juice() %>%
+  mutate(value = MSFT %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+MSFT_x_test <- MSFT_recipe %>% bake(data_test_A) 
+MSFT_y_test <- MSFT_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = MSFT %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+MSFT_x_train_arr <- MSFT_x_train %>% pull(MSFT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+MSFT_x_test_arr <- MSFT_x_test %>% pull(MSFT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+MSFT_y_train_arr <- MSFT_y_train %>% pull(MSFT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+MSFT_y_test_arr <- MSFT_y_test %>% pull(MSFT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+MSFT_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(MSFT_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+ layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(MSFT_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(MSFT_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+MSFT_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+MSFT_hist_model <- MSFT_model %>% fit(x = MSFT_x_train_arr, 
+                            y          = MSFT_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### NVDA LSTM
+
+```{r, warning=FALSE}
+NVDA_recipe <- data_train_A %>%
+ recipe(NVDA ~ .) %>% 
+  step_normalize(NVDA) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+NVDA_prep_history <- tibble(
+  mean = NVDA_recipe$steps[[1]]$means,
+  sds = NVDA_recipe$steps[[1]]$sds
+)
+
+NVDA_prep_history
+```
+
+```{r, warning=FALSE}
+NVDA_x_train <- NVDA_recipe %>% juice() 
+NVDA_y_train <- NVDA_recipe %>%  juice() %>%
+  mutate(value = NVDA %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+NVDA_x_test <- NVDA_recipe %>% bake(data_test_A) 
+NVDA_y_test <- NVDA_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = NVDA %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+NVDA_x_train_arr <- NVDA_x_train %>% pull(NVDA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+NVDA_x_test_arr <- NVDA_x_test %>% pull(NVDA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+NVDA_y_train_arr <- NVDA_y_train %>% pull(NVDA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+NVDA_y_test_arr <- NVDA_y_test %>% pull(NVDA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+NVDA_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(NVDA_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+NVDA_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+NVDA_hist_model <- NVDA_model %>% fit(x = NVDA_x_train_arr, 
+                            y          = NVDA_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+### V LSTM
+
+```{r, warning=FALSE}
+V_recipe <- data_train_A %>%
+ recipe(V ~ .) %>% 
+  step_normalize(V) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+V_prep_history <- tibble(
+  mean = V_recipe$steps[[1]]$means,
+  sds = V_recipe$steps[[1]]$sds
+)
+
+V_prep_history
+```
+
+```{r, warning=FALSE}
+V_x_train <- V_recipe %>% juice() 
+V_y_train <- V_recipe %>%  juice() %>%
+  mutate(value = V %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+V_x_test <- V_recipe %>% bake(data_test_A) 
+V_y_test <- V_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = V %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+V_x_train_arr <- V_x_train %>% pull(V) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+V_x_test_arr <- V_x_test %>% pull(V) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+V_y_train_arr <- V_y_train %>% pull(V) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+V_y_test_arr <- V_y_test %>% pull(V) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+V_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(V_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+V_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+V_hist_model <- V_model %>% fit(x = V_x_train_arr, 
+                            y          = V_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 16,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+
+### ABBV LSTM
+
+```{r, warning=FALSE}
+ABBV_recipe <- data_train_A %>%
+ recipe(ABBV ~ .) %>% 
+  step_normalize(ABBV) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+ABBV_prep_history <- tibble(
+  mean = ABBV_recipe$steps[[1]]$means,
+  sds = ABBV_recipe$steps[[1]]$sds
+)
+
+ABBV_prep_history
+```
+
+```{r, warning=FALSE}
+ABBV_x_train <- ABBV_recipe %>% juice() 
+ABBV_y_train <- ABBV_recipe %>%  juice() %>%
+  mutate(value = ABBV %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+ABBV_x_test <- ABBV_recipe %>% bake(data_test_A) 
+ABBV_y_test <- ABBV_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = ABBV %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+ABBV_x_train_arr <- ABBV_x_train %>% pull(ABBV) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+ABBV_x_test_arr <- ABBV_x_test %>% pull(ABBV) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+ABBV_y_train_arr <- ABBV_y_train %>% pull(ABBV) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+ABBV_y_test_arr <- ABBV_y_test %>% pull(ABBV) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+ABBV_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(ABBV_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+ABBV_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+ABBV_hist_model <- ABBV_model %>% fit(x = ABBV_x_train_arr, 
+                            y          = ABBV_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+### BAC LSTM
+
+```{r, warning=FALSE}
+BAC_recipe <- data_train_A %>%
+ recipe(BAC ~ .) %>% 
+  step_normalize(BAC) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+BAC_prep_history <- tibble(
+  mean = BAC_recipe$steps[[1]]$means,
+  sds = BAC_recipe$steps[[1]]$sds
+)
+
+BAC_prep_history
+```
+
+```{r, warning=FALSE}
+BAC_x_train <- BAC_recipe %>% juice() 
+BAC_y_train <- BAC_recipe %>%  juice() %>%
+  mutate(value = BAC %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+BAC_x_test <- BAC_recipe %>% bake(data_test_A) 
+BAC_y_test <- BAC_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = BAC %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+BAC_x_train_arr <- BAC_x_train %>% pull(BAC) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+BAC_x_test_arr <- BAC_x_test %>% pull(BAC) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+BAC_y_train_arr <- BAC_y_train %>% pull(BAC) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+BAC_y_test_arr <- BAC_y_test %>% pull(BAC) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+BAC_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(BAC_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+BAC_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+BAC_hist_model <- BAC_model %>% fit(x = BAC_x_train_arr, 
+                            y          = BAC_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### CAT LSTM
+
+```{r, warning=FALSE}
+CAT_recipe <- data_train_A %>%
+ recipe(CAT ~ .) %>% 
+  step_normalize(CAT) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+CAT_prep_history <- tibble(
+  mean = CAT_recipe$steps[[1]]$means,
+  sds = CAT_recipe$steps[[1]]$sds
+)
+
+CAT_prep_history
+```
+
+```{r, warning=FALSE}
+CAT_x_train <- CAT_recipe %>% juice() 
+CAT_y_train <- CAT_recipe %>%  juice() %>%
+  mutate(value = CAT %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+CAT_x_test <- CAT_recipe %>% bake(data_test_A) 
+CAT_y_test <- CAT_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = CAT %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+CAT_x_train_arr <- CAT_x_train %>% pull(CAT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+CAT_x_test_arr <- CAT_x_test %>% pull(CAT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+CAT_y_train_arr <- CAT_y_train %>% pull(CAT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+CAT_y_test_arr <- CAT_y_test %>% pull(CAT) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+CAT_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(CAT_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+CAT_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+CAT_hist_model <- CAT_model %>% fit(x = CAT_x_train_arr, 
+                            y          = CAT_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callCATks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+### MA LSTM
+
+```{r, warning=FALSE}
+MA_recipe <- data_train_A %>%
+ recipe(MA ~ .) %>% 
+  step_normalize(MA) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+MA_prep_history <- tibble(
+  mean = MA_recipe$steps[[1]]$means,
+  sds = MA_recipe$steps[[1]]$sds
+)
+
+MA_prep_history
+```
+
+```{r, warning=FALSE}
+MA_x_train <- MA_recipe %>% juice() 
+MA_y_train <- MA_recipe %>%  juice() %>%
+  mutate(value = MA %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+MA_x_test <- MA_recipe %>% bake(data_test_A) 
+MA_y_test <- MA_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = MA %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+MA_x_train_arr <- MA_x_train %>% pull(MA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+MA_x_test_arr <- MA_x_test %>% pull(MA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+MA_y_train_arr <- MA_y_train %>% pull(MA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+MA_y_test_arr <- MA_y_test %>% pull(MA) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+MA_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(MA_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+MA_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+MA_hist_model <- MA_model %>% fit(x = MA_x_train_arr, 
+                            y          = MA_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callMAks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+
+### LLY LSTM
+
+```{r, warning=FALSE}
+LLY_recipe <- data_train_A %>%
+ recipe(LLY ~ .) %>% 
+  step_normalize(LLY) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+LLY_prep_history <- tibble(
+  mean = LLY_recipe$steps[[1]]$means,
+  sds = LLY_recipe$steps[[1]]$sds
+)
+
+LLY_prep_history
+```
+
+```{r, warning=FALSE}
+LLY_x_train <- LLY_recipe %>% juice() 
+LLY_y_train <- LLY_recipe %>%  juice() %>%
+  mutate(value = LLY %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+LLY_x_test <- LLY_recipe %>% bake(data_test_A) 
+LLY_y_test <- LLY_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = LLY %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+LLY_x_train_arr <- LLY_x_train %>% pull(LLY) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+LLY_x_test_arr <- LLY_x_test %>% pull(LLY) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+LLY_y_train_arr <- LLY_y_train %>% pull(LLY) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+LLY_y_test_arr <- LLY_y_test %>% pull(LLY) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+LLY_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(LLY_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(LLY_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 16, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+LLY_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+LLY_hist_model <- LLY_model %>% fit(x = LLY_x_train_arr, 
+                            y          = LLY_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 64,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### AVGO LSTM
+
+```{r, warning=FALSE}
+AVGO_recipe <- data_train_A %>%
+ recipe(AVGO ~ .) %>% 
+  step_normalize(AVGO) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+AVGO_prep_history <- tibble(
+  mean = AVGO_recipe$steps[[1]]$means,
+  sds = AVGO_recipe$steps[[1]]$sds
+)
+
+AVGO_prep_history
+```
+
+```{r, warning=FALSE}
+AVGO_x_train <- AVGO_recipe %>% juice() 
+AVGO_y_train <- AVGO_recipe %>%  juice() %>%
+  mutate(value = AVGO %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+AVGO_x_test <- AVGO_recipe %>% bake(data_test_A) 
+AVGO_y_test <- AVGO_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = AVGO %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+AVGO_x_train_arr <- AVGO_x_train %>% pull(AVGO) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+AVGO_x_test_arr <- AVGO_x_test %>% pull(AVGO) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+AVGO_y_train_arr <- AVGO_y_train %>% pull(AVGO) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+AVGO_y_test_arr <- AVGO_y_test %>% pull(AVGO) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+AVGO_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(AVGO_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+AVGO_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+AVGO_hist_model <- AVGO_model %>% fit(x = AVGO_x_train_arr, 
+                            y          = AVGO_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+### UNH LSTM
+
+```{r, warning=FALSE}
+UNH_recipe <- data_train_A %>%
+ recipe(UNH ~ .) %>% 
+  step_normalize(UNH) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+UNH_prep_history <- tibble(
+  mean = UNH_recipe$steps[[1]]$means,
+  sds = UNH_recipe$steps[[1]]$sds
+)
+
+UNH_prep_history
+```
+
+```{r, warning=FALSE}
+UNH_x_train <- UNH_recipe %>% juice() 
+UNH_y_train <- UNH_recipe %>%  juice() %>%
+  mutate(value = UNH %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+UNH_x_test <- UNH_recipe %>% bake(data_test_A) 
+UNH_y_test <- UNH_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = UNH %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+UNH_x_train_arr <- UNH_x_train %>% pull(UNH) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+UNH_x_test_arr <- UNH_x_test %>% pull(UNH) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+UNH_y_train_arr <- UNH_y_train %>% pull(UNH) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+UNH_y_test_arr <- UNH_y_test %>% pull(UNH) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+UNH_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(UNH_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(UNH_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+    layer_dense(units = 32, activation = 'relu') %>%
+    layer_lstm(units = 128, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(UNH_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+UNH_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+UNH_hist_model <- UNH_model %>% fit(x = UNH_x_train_arr, 
+                            y          = UNH_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+### MRK LSTM
+
+```{r, warning=FALSE}
+MRK_recipe <- data_train_A %>%
+ recipe(MRK ~ .) %>% 
+  step_normalize(MRK) %>%
+  step_arrange(Date) %>%
+  prep()
+```
+
+
+```{r, warning=FALSE}
+MRK_prep_history <- tibble(
+  mean = MRK_recipe$steps[[1]]$means,
+  sds = MRK_recipe$steps[[1]]$sds
+)
+
+MRK_prep_history
+```
+
+```{r, warning=FALSE}
+MRK_x_train <- MRK_recipe %>% juice() 
+MRK_y_train <- MRK_recipe %>%  juice() %>%
+  mutate(value = MRK %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+MRK_x_test <- MRK_recipe %>% bake(data_test_A) 
+MRK_y_test <- MRK_recipe %>%  bake(data_test_A) %>%  
+  mutate(value = MRK %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+```{r, warning=FALSE}
+MRK_x_train_arr <- MRK_x_train %>% pull(MRK) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+MRK_x_test_arr <- MRK_x_test %>% pull(MRK) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+MRK_y_train_arr <- MRK_y_train %>% pull(MRK) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+MRK_y_test_arr <- MRK_y_test %>% pull(MRK) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+
+```{r, warning=FALSE}
+MRK_model <- keras_model_sequential() %>%
+
+  layer_lstm(units = 64, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             input_shape = dim(MRK_x_train_arr)[-1],
+             return_sequences = TRUE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+  layer_lstm(units = 32, 
+             dropout=0.2, 
+             recurrent_dropout=0.2,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+
+ 
+  layer_dense(units = 1, activation = 'linear')
+
+MRK_model %>% compile(loss = 'mse', optimizer = optimizer_adam(), metrics = 'mse')
+```
+
+
+
+```{r, message=c(1, 2),warning=FALSE}
+MRK_hist_model <- MRK_model %>% fit(x = MRK_x_train_arr, 
+                            y          = MRK_y_train_arr, 
+                            epochs     = 100,
+                            verbose    = TRUE, 
+                            batch_size = 32,
+                            validation_split = 0.2, 
+                            shuffle    = FALSE,
+                            callbacks  = callback_early_stopping(monitor = "mse", patience = 10))
+```
+
+
+
+
+
+
+
+## LSTM Forecast 
+
+#### GOOGL LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+GOOGL_pred <- GOOGL_model %>% predict(GOOGL_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+GOOGL_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(GOOGL),
+  truth1 = data_test %>% pull(GOOGL),
+  pred_afkast = GOOGL_pred %>% reverse_norm(x = ., mean = GOOGL_prep_history$mean, sds = GOOGL_prep_history$sds),
+  pred = pred_afkast + data_test_lag$GOOGL,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_GOOGL=ts(GOOGL_eval$pred, start=c(2020,1), freq=251)
+```
+
+#### GOOG LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+GOOG_pred <- GOOG_model %>% predict(GOOG_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+GOOG_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(GOOG),
+  truth1 = data_test %>% pull(GOOG),
+  pred_afkast = GOOG_pred %>% reverse_norm(x = ., mean = GOOG_prep_history$mean, sds = GOOG_prep_history$sds),
+  pred = pred_afkast + data_test_lag$GOOG,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_GOOG=ts(GOOG_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### AMZN LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+AMZN_pred <- AMZN_model %>% predict(AMZN_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+AMZN_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(AMZN),
+  truth1 = data_test %>% pull(AMZN),
+  pred_afkast = AMZN_pred %>% reverse_norm(x = ., mean = AMZN_prep_history$mean, sds = AMZN_prep_history$sds),
+  pred = pred_afkast + data_test_lag$AMZN,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_AMZN=ts(AMZN_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### TSLA LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+TSLA_pred <- TSLA_model %>% predict(TSLA_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+TSLA_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(TSLA),
+  truth1 = data_test %>% pull(TSLA),
+  pred_afkast = TSLA_pred %>% reverse_norm(x = ., mean = TSLA_prep_history$mean, sds = TSLA_prep_history$sds),
+  pred = pred_afkast + data_test_lag$TSLA,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_TSLA=ts(TSLA_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### HD LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+HD_pred <- HD_model %>% predict(HD_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+HD_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(HD),
+  truth1 = data_test %>% pull(HD),
+  pred_afkast = HD_pred %>% reverse_norm(x = ., mean = HD_prep_history$mean, sds = HD_prep_history$sds),
+  pred = pred_afkast + data_test_lag$HD,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_HD=ts(HD_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### JPM LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+JPM_pred <- JPM_model %>% predict(JPM_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+JPM_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(JPM),
+  truth1 = data_test %>% pull(JPM),
+  pred_afkast = JPM_pred %>% reverse_norm(x = ., mean = JPM_prep_history$mean, sds = JPM_prep_history$sds),
+  pred = pred_afkast + data_test_lag$JPM,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_JPM=ts(JPM_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+#### BRK.B LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+BRK.B_pred <- BRK.B_model %>% predict(BRK.B_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+BRK.B_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(BRK.B),
+  truth1 = data_test %>% pull(BRK.B),
+  pred_afkast = BRK.B_pred %>% reverse_norm(x = ., mean = BRK.B_prep_history$mean, sds = BRK.B_prep_history$sds),
+  pred = pred_afkast + data_test_lag$BRK.B,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_BRK.B=ts(BRK.B_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### UPS LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+UPS_pred <- UPS_model %>% predict(UPS_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+UPS_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(UPS),
+  truth1 = data_test %>% pull(UPS),
+  pred_afkast = UPS_pred %>% reverse_norm(x = ., mean = UPS_prep_history$mean, sds = UPS_prep_history$sds),
+  pred = pred_afkast + data_test_lag$UPS,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_UPS=ts(UPS_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### AAPL LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+AAPL_pred <- AAPL_model %>% predict(AAPL_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+AAPL_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(AAPL),
+  truth1 = data_test %>% pull(AAPL),
+  pred_afkast = AAPL_pred %>% reverse_norm(x = ., mean = AAPL_prep_history$mean, sds = AAPL_prep_history$sds),
+  pred = pred_afkast + data_test_lag$AAPL,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_AAPL=ts(AAPL_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### MSFT LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+MSFT_pred <- MSFT_model %>% predict(MSFT_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+MSFT_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(MSFT),
+  truth1 = data_test %>% pull(MSFT),
+  pred_afkast = MSFT_pred %>% reverse_norm(x = ., mean = MSFT_prep_history$mean, sds = MSFT_prep_history$sds),
+  pred = pred_afkast + data_test_lag$MSFT,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_MSFT=ts(MSFT_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+
+#### NVDA LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+NVDA_pred <- NVDA_model %>% predict(NVDA_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+NVDA_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(NVDA),
+  truth1 = data_test %>% pull(NVDA),
+  pred_afkast = NVDA_pred %>% reverse_norm(x = ., mean = NVDA_prep_history$mean, sds = NVDA_prep_history$sds),
+  pred = pred_afkast + data_test_lag$NVDA,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_NVDA=ts(NVDA_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### V LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+V_pred <- V_model %>% predict(V_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+V_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(V),
+  truth1 = data_test %>% pull(V),
+  pred_afkast = V_pred %>% reverse_norm(x = ., mean = V_prep_history$mean, sds = V_prep_history$sds),
+  pred = pred_afkast + data_test_lag$V,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_V=ts(V_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+#### ABBV LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+ABBV_pred <- ABBV_model %>% predict(ABBV_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+ABBV_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(ABBV),
+  truth1 = data_test %>% pull(ABBV),
+  pred_afkast = ABBV_pred %>% reverse_norm(x = ., mean = ABBV_prep_history$mean, sds = ABBV_prep_history$sds),
+  pred = pred_afkast + data_test_lag$ABBV,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_ABBV=ts(ABBV_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### BAC LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+BAC_pred <- BAC_model %>% predict(BAC_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+BAC_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(BAC),
+  truth1 = data_test %>% pull(BAC),
+  pred_afkast = BAC_pred %>% reverse_norm(x = ., mean = BAC_prep_history$mean, sds = BAC_prep_history$sds),
+  pred = pred_afkast + data_test_lag$BAC,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_BAC=ts(BAC_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+
+
+#### CAT LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+CAT_pred <- CAT_model %>% predict(CAT_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+CAT_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(CAT),
+  truth1 = data_test %>% pull(CAT),
+  pred_afkast = CAT_pred %>% reverse_norm(x = ., mean = CAT_prep_history$mean, sds = CAT_prep_history$sds),
+  pred = pred_afkast + data_test_lag$CAT,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_CAT=ts(CAT_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+#### MA LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+MA_pred <- MA_model %>% predict(MA_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+MA_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(MA),
+  truth1 = data_test %>% pull(MA),
+  pred_afkast = MA_pred %>% reverse_norm(x = ., mean = MA_prep_history$mean, sds = MA_prep_history$sds),
+  pred = pred_afkast + data_test_lag$MA,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_MA=ts(MA_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+#### LLY LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+LLY_pred <- LLY_model %>% predict(LLY_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+LLY_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(LLY),
+  truth1 = data_test %>% pull(LLY),
+  pred_afkast = LLY_pred %>% reverse_norm(x = ., mean = LLY_prep_history$mean, sds = LLY_prep_history$sds),
+  pred = pred_afkast + data_test_lag$LLY,
+ pred1 = pred_afkast + truth)
+
+```
+
+
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_LLY=ts(LLY_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+#### AVGO LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+AVGO_pred <- AVGO_model %>% predict(AVGO_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+AVGO_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(AVGO),
+  truth1 = data_test %>% pull(AVGO),
+  pred_afkast = AVGO_pred %>% reverse_norm(x = ., mean = AVGO_prep_history$mean, sds = AVGO_prep_history$sds),
+  pred = pred_afkast + data_test_lag$AVGO,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_AVGO=ts(AVGO_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+
+
+#### UNH LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+UNH_pred <- UNH_model %>% predict(UNH_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+UNH_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(UNH),
+  truth1 = data_test %>% pull(UNH),
+  pred_afkast = UNH_pred %>% reverse_norm(x = ., mean = UNH_prep_history$mean, sds = UNH_prep_history$sds),
+  pred = pred_afkast + data_test_lag$UNH,
+ pred1 = pred_afkast + truth)
+
+```
+
+
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_UNH=ts(UNH_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+#### MRK LSTM forecast
+
+```{r, message=c(1, 2),warning=FALSE}
+MRK_pred <- MRK_model %>% predict(MRK_x_test_arr) %>% as.numeric()
+```
+
+```{r, message=c(1, 2),warning=FALSE}
+MRK_eval <- tibble(
+  index = data_test %>% pull(Date),
+  truth = data_test_A %>% pull(MRK),
+  truth1 = data_test %>% pull(MRK),
+  pred_afkast = MRK_pred %>% reverse_norm(x = ., mean = MRK_prep_history$mean, sds = MRK_prep_history$sds),
+  pred = pred_afkast + data_test_lag$MRK,
+ pred1 = pred_afkast + truth)
+
+```
+
+Omdanner forecast til tidsserier
+
+```{r}
+fcast_LSTM_MRK=ts(MRK_eval$pred, start=c(2020,1), freq=251)
+```
+
+
+
+
+
+
+
+
+# Evaluering af forecast
+
+
+## Accuracy evaluering LSTM
+
+```{}
+Acc_LSTM <- data.frame(AAPL= c(MDA(fcast_LSTM_AAPL, data_test_AAPL), accuracy(fcast_LSTM_AAPL, data_test_AAPL)),
+           MSFT= c(MDA(fcast_LSTM_MSFT, data_test_MSFT), accuracy(fcast_LSTM_MSFT, data_test_MSFT)),
+           AMZN= c(MDA(fcast_LSTM_AMZN, data_test_AMZN), accuracy(fcast_LSTM_AMZN, data_test_AMZN)),
+           GOOGL= c(MDA(fcast_LSTM_GOOGL, data_test_GOOGL), accuracy(fcast_LSTM_GOOGL, data_test_GOOGL)),
+           BRK.B= c(MDA(fcast_LSTM_BRK.B, data_test_BRK.B), accuracy(fcast_LSTM_BRK.B, data_test_BRK.B)),
+           TSLA= c(MDA(fcast_LSTM_TSLA, data_test_TSLA), accuracy(fcast_LSTM_TSLA, data_test_TSLA)),
+           NVDA= c(MDA(fcast_LSTM_NVDA, data_test_NVDA), accuracy(fcast_LSTM_NVDA, data_test_NVDA)),
+           GOOG= c(MDA(fcast_LSTM_GOOG, data_test_GOOG), accuracy(fcast_LSTM_GOOG, data_test_GOOG)),
+           #UNH= c(MDA(fcast_LSTM_UNH, data_test_UNH), accuracy(fcast_LSTM_UNH, data_test_UNH)),
+           JPM= c(MDA(fcast_LSTM_JPM, data_test_JPM), accuracy(fcast_LSTM_JPM, data_test_JPM)),
+           AVGO= c(MDA(fcast_LSTM_AVGO, data_test_AVGO), accuracy(fcast_LSTM_AVGO, data_test_AVGO)),
+           V= c(MDA(fcast_LSTM_V, data_test_V), accuracy(fcast_LSTM_V, data_test_V)),
+           BAC= c(MDA(fcast_LSTM_BAC, data_test_BAC), accuracy(fcast_LSTM_BAC, data_test_BAC)),
+           HD= c(MDA(fcast_LSTM_HD, data_test_HD), accuracy(fcast_LSTM_HD, data_test_HD)),
+           MA= c(MDA(fcast_LSTM_MA, data_test_MA), accuracy(fcast_LSTM_MA, data_test_MA)),
+           #MRK= c(MDA(fcast_LSTM_MRK, data_test_MRK), accuracy(fcast_LSTM_MRK, data_test_MRK)),
+           ABBV= c(MDA(fcast_LSTM_ABBV, data_test_ABBV), accuracy(fcast_LSTM_ABBV, data_test_ABBV)),
+           LLY= c(MDA(fcast_LSTM_LLY, data_test_LLY), accuracy(fcast_LSTM_LLY, data_test_LLY)),
+           UPS= c(MDA(fcast_LSTM_UPS, data_test_UPS), accuracy(fcast_LSTM_UPS, data_test_UPS)),
+           CAT= c(MDA(fcast_LSTM_CAT, data_test_CAT), accuracy(fcast_LSTM_CAT, data_test_CAT)),
+           #SP500= c(MDA(fcast_LSTM_SP500, data_test_SP500), accuracy(fcast_LSTM_SP500, data_test_SP500)),
+           row.names = c("MDA", "ME", "RMSE", "MAE","MPE", "MAPE","ACF1", "Theil's U"))
+```
+
+
+
+
+
+## Test for bias
+
+Hvis de udvalgte forecast er unbiased, bør de kunne pålægges restriktionerne at – = 0 og — = 1. Herved vil
+der ikke være niveauforskel, for forecast og faktiske observatione, eller persistent fejlestimation, hvorved
+forecast og faktiske observationer ikke følges ad, hvorved der forekommer diskrepans. Hertil opstilles følgende
+hypoteser
+
+$$H0 = α = 0; β = 0$$
+
+
+
+$$ H1 = α ≠ 0; β ≠ 0$$
+
+Du fra ovenstående kan det ses at alle modellerne har en p-værdi over 0,05 og dermed er der ikke signifikant
+forskel i forcastet og den faktiske tidsserie, og dermed er der ikke bias i de opstillede forecast.
+
+
+
+### LSTM
+
+```{}
+BiasTest_AAPL=lm(data_test_AAPL~fcast_LSTM_AAPL)
+H_01_AAPL <- c("(Intercept)=0", "fcast_LSTM_AAPL=1")
+linearHypothesis(BiasTest_AAPL,H_01_AAPL)
+
+BiasTest_MSFT=lm(data_test_MSFT~fcast_LSTM_MSFT)
+H_01_MSFT <- c("(Intercept)=0", "fcast_LSTM_MSFT=1")
+linearHypothesis(BiasTest_MSFT,H_01_MSFT)
+
+BiasTest_AMZN=lm(data_test_AMZN~fcast_LSTM_AMZN)
+H_01_AMZN <- c("(Intercept)=0", "fcast_LSTM_AMZN=1")
+linearHypothesis(BiasTest_AMZN,H_01_AMZN)
+
+BiasTest_GOOGL=lm(data_test_GOOGL~fcast_LSTM_GOOGL)
+H_01_GOOGL <- c("(Intercept)=0", "fcast_LSTM_GOOGL=1")
+linearHypothesis(BiasTest_GOOGL,H_01_GOOGL)
+
+BiasTest_BRK.B=lm(data_test_BRK.B~fcast_LSTM_BRK.B)
+H_01_BRK.B <- c("(Intercept)=0", "fcast_LSTM_BRK.B=1")
+linearHypothesis(BiasTest_BRK.B,H_01_BRK.B)
+
+BiasTest_TSLA=lm(data_test_TSLA~fcast_LSTM_TSLA)
+H_01_TSLA <- c("(Intercept)=0", "fcast_LSTM_TSLA=1")
+linearHypothesis(BiasTest_TSLA,H_01_TSLA)
+
+BiasTest_NVDA=lm(data_test_NVDA~fcast_LSTM_NVDA)
+H_01_NVDA <- c("(Intercept)=0", "fcast_LSTM_NVDA=1")
+linearHypothesis(BiasTest_NVDA,H_01_NVDA)
+
+BiasTest_GOOG=lm(data_test_GOOG~fcast_LSTM_GOOG)
+H_01_GOOG <- c("(Intercept)=0", "fcast_LSTM_GOOG=1")
+linearHypothesis(BiasTest_GOOG,H_01_GOOG)
+
+BiasTest_UNH=lm(data_test_UNH~fcast_LSTM_UNH)
+H_01_UNH <- c("(Intercept)=0", "fcast_LSTM_UNH=1")
+linearHypothesis(BiasTest_UNH,H_01_UNH)
+
+BiasTest_JPM=lm(data_test_JPM~fcast_LSTM_JPM)
+H_01_JPM <- c("(Intercept)=0", "fcast_LSTM_JPM=1")
+linearHypothesis(BiasTest_JPM,H_01_JPM)
+
+BiasTest_AVGO=lm(data_test_AVGO~fcast_LSTM_AVGO)
+H_01_AVGO <- c("(Intercept)=0", "fcast_LSTM_AVGO=1")
+linearHypothesis(BiasTest_AVGO,H_01_AVGO)
+
+BiasTest_V=lm(data_test_V~fcast_LSTM_V)
+H_01_V <- c("(Intercept)=0", "fcast_LSTM_V=1")
+linearHypothesis(BiasTest_V,H_01_V)
+
+BiasTest_BAC=lm(data_test_BAC~fcast_LSTM_BAC)
+H_01_BAC <- c("(Intercept)=0", "fcast_LSTM_BAC=1")
+linearHypothesis(BiasTest_BAC,H_01_BAC)
+
+BiasTest_HD=lm(data_test_HD~fcast_LSTM_HD)
+H_01_HD <- c("(Intercept)=0", "fcast_LSTM_HD=1")
+linearHypothesis(BiasTest_HD,H_01_HD)
+
+BiasTest_MA=lm(data_test_MA~fcast_LSTM_MA)
+H_01_MA <- c("(Intercept)=0", "fcast_LSTM_MA=1")
+linearHypothesis(BiasTest_MA,H_01_MA)
+
+BiasTest_MRK=lm(data_test_MRK~fcast_LSTM_MRK)
+H_01_MRK <- c("(Intercept)=0", "fcast_LSTM_MRK=1")
+linearHypothesis(BiasTest_MRK,H_01_MRK)
+
+BiasTest_ABBV=lm(data_test_ABBV~fcast_LSTM_ABBV)
+H_01_ABBV <- c("(Intercept)=0", "fcast_LSTM_ABBV=1")
+linearHypothesis(BiasTest_ABBV,H_01_ABBV)
+
+BiasTest_LLY=lm(data_test_LLY~fcast_LSTM_LLY)
+H_01_LLY <- c("(Intercept)=0", "fcast_LSTM_LLY=1")
+linearHypothesis(BiasTest_LLY,H_01_LLY)
+
+BiasTest_UPS=lm(data_test_UPS~fcast_LSTM_UPS)
+H_01_UPS <- c("(Intercept)=0", "fcast_LSTM_UPS=1")
+linearHypothesis(BiasTest_UPS,H_01_UPS)
+
+BiasTest_CAT=lm(data_test_CAT~fcast_LSTM_CAT)
+H_01_CAT <- c("(Intercept)=0", "fcast_LSTM_CAT=1")
+linearHypothesis(BiasTest_CAT,H_01_CAT)
+
+BiasTest_SP500=lm(data_test_SP500~fcast_LSTM_SP500)
+H_01_SP500 <- c("(Intercept)=0", "fcast_LSTM_SP500=1")
+linearHypothesis(BiasTest_SP500,H_01_SP500)
+```
+
+Du fra ovenstående kan det ses at alle modellerne har en p-værdi over 0,05 og dermed er der ikke signifikant
+forskel i forcastet og den faktiske tidsserie, og dermed er der ikke bias i de opstillede forecast.
+
+#merge the fcast lstm
+
+
+
+
+### Excel LSTM
+
+```{r}
+write.csv(fcast_LSTM_AAPL,"AAPL.csv")
+write.csv(fcast_LSTM_ABBV,"ABBY.csv")
+write.csv(fcast_LSTM_AMZN,"AMZN.csv")
+write.csv(fcast_LSTM_AVGO,"AVGO.csv")
+write.csv(fcast_LSTM_BRK.B,"BRK.csv")
+write.csv(fcast_LSTM_GOOG,"GOOG.csv")
+write.csv(fcast_LSTM_GOOGL,"GOOGL.csv")
+write.csv(fcast_LSTM_HD,"HD.csv")
+write.csv(fcast_LSTM_JPM,"JPM.csv")
+write.csv(fcast_LSTM_LLY,"LLY.csv")
+write.csv(fcast_LSTM_MRK,"MRK.csv")
+write.csv(fcast_LSTM_UNH,"UNH.csv")
+write.csv(fcast_LSTM_UPS,"UPS.csv")
+write.csv(fcast_LSTM_V,"V.csv")
+write.csv(fcast_LSTM_MA,"MA.csv")
+write.csv(fcast_LSTM_BAC,"BAC.csv")
+write.csv(fcast_LSTM_NVDA,"NVDA.csv")
+write.csv(fcast_LSTM_TSLA,"TSLA.csv")
+write.csv(fcast_LSTM_CAT,"CAT.csv")
+write.csv(fcast_LSTM_MSFT,"MSFT.csv")
+
+```
+
+
+
+## Diebold Mariano
+
+
+
+
