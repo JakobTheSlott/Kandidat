@@ -1,3 +1,24 @@
+New version - repiditative
+________________________________________
+Sub SolverRecord()
+    For i = 2 To 10
+        Sheets("LSTM Buy and Sell ").Select
+        SolverReset
+        SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+        SolverAdd CellRef:="$X$" & i & ":$AQ$" & i, Relation:=1, FormulaText:="0.2"
+        SolverAdd CellRef:="$X$" & i & ":$AQ$" & i, Relation:=3, FormulaText:="-0.1"
+        SolverAdd CellRef:="$AS$" & i, Relation:=2, FormulaText:="0.99999999"
+        SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+        SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
+        Engine:=1, EngineDesc:="GRG Nonlinear"
+        SolverSolve userfinish:=True
+        solverfinish keepfinal:=1
+    Next i
+End Sub
+________________________________________
+
 Sub SolverRecord()
 '
 ' SolverRecord Macro
