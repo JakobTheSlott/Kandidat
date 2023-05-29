@@ -40,24 +40,26 @@ Sub SolverRecord()
     solverfinish keepfinal:=1
 End Sub
 --------------------------------------
-Sub SolverRecord()
-'
-' SolverRecord Macro
-'
-
-'
-    Sheets("MV Buy and Sell").Select
-    SolverReset
-    SolverOk SetCell:="$CV$6", MaxMinVal:=1, ValueOf:=0, ByChange:="$BU$6:$CN$6", _
+For i = 202 To 204
+        Sheets("ARIMA Buy and Sell").Select
+        SolverReset
+        SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
         Engine:=1, EngineDesc:="GRG Nonlinear"
-    SolverAdd CellRef:="$BU$6:$CN$6", Relation:=1, FormulaText:="0.2"
-    SolverAdd CellRef:="BU$6:$CN$6", Relation:=3, FormulaText:="-0.1"
-    SolverAdd CellRef:="$CP$6", Relation:=2, FormulaText:="0.99999999"
-    SolverOk SetCell:="$CV$6", MaxMinVal:=1, ValueOf:=0, ByChange:="$BU$6:$CN$6", _
+        SolverAdd CellRef:="$X$" & i & ":$AQ$" & i, Relation:=1, FormulaText:="0.2"
+        SolverAdd CellRef:="$X$" & i & ":$AQ$" & i, Relation:=3, FormulaText:="-0.1"
+        SolverAdd CellRef:="$AS$" & i, Relation:=2, FormulaText:="0.99999999"
+        SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
         Engine:=1, EngineDesc:="GRG Nonlinear"
-    SolverOk SetCell:="$CV$6", MaxMinVal:=1, ValueOf:=0, ByChange:="$BU$6:$CN$6", _
+        SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
         Engine:=1, EngineDesc:="GRG Nonlinear"
-    SolverSolve userfinish:=True
-    solverfinish keepfinal:=1
+        SolverSolve userfinish:=True
+            SolverOptions MaxTime:=0, Iterations:=15, Precision:=1E-06, Convergence:=0.0001 _
+        , StepThru:=False, Scaling:=False, AssumeNonNeg:=True, Derivatives:=1
+    SolverOptions PopulationSize:=100, RandomSeed:=0, MutationRate:=0.075, MultiStart _
+        :=False, RequireBounds:=True, MaxSubproblems:=0, MaxIntegerSols:=0, _
+        IntTolerance:=1, SolveWithout:=True, MaxTimeNoImp:=30
+    SolverOk SetCell:="$AY$201", MaxMinVal:=1, ValueOf:=0, ByChange:= _
+        "$X$201:$AQ$201", Engine:=1, EngineDesc:="GRG Nonlinear"
+        solverfinish keepfinal:=1
+    Next i
 End Sub
-
