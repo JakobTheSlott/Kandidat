@@ -40,7 +40,7 @@ Sub SolverRecord()
     solverfinish keepfinal:=1
 End Sub
 --------------------------------------
-For i = 202 To 204
+For i = 212 To 215
         Sheets("ARIMA Buy and Sell").Select
         SolverReset
         SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
@@ -53,7 +53,7 @@ For i = 202 To 204
         SolverOk SetCell:="$AY$" & i, MaxMinVal:=1, ValueOf:=0, ByChange:="$X$" & i & ":$AQ$" & i, _
         Engine:=1, EngineDesc:="GRG Nonlinear"
         SolverSolve userfinish:=True
-            SolverOptions MaxTime:=0, Iterations:=15, Precision:=1E-06, Convergence:=0.0001 _
+            SolverOptions MaxTime:=0, Iterations:=0, Precision:=0.001, Convergence:=0.0001 _
         , StepThru:=False, Scaling:=False, AssumeNonNeg:=True, Derivatives:=1
     SolverOptions PopulationSize:=100, RandomSeed:=0, MutationRate:=0.075, MultiStart _
         :=False, RequireBounds:=True, MaxSubproblems:=0, MaxIntegerSols:=0, _
@@ -62,4 +62,3 @@ For i = 202 To 204
         "$X$201:$AQ$201", Engine:=1, EngineDesc:="GRG Nonlinear"
         solverfinish keepfinal:=1
     Next i
-End Sub
